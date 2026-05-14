@@ -1,0 +1,12 @@
+{
+  "auth": {
+    "base_url": "https://ncvocj.condense.zeliot.in/vehicle-da-mgmt",
+    "endpoint": "/api/auth",
+    "client_id": "46dbd0c2-8df4-4df8-8e0f-1783dbe428b0",
+    "client_secret": "UDUlO00IReFkaEN5/c5BepEF3H4IIstk5MY5XZZO6zx1r2epVnVFA65GtS0j/PY6I7VVi+lbbh/yHJog25L/wA=="
+  },
+  "vehicle_registry": {
+    "base_url": "https://ncvocj.condense.zeliot.in/vehicle-da-mgmt",
+    "endpoint": "/api/customers"
+  }
+}

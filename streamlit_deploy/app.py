@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -46,6 +48,99 @@ def _secret_or_default(key: str, default_value):
         return st.secrets["azure"][key.lower()]
 
     return default_value
+
+
+def _get_secret_value(section: str, key: str, default_value: str = "") -> str:
+    if key in st.secrets:
+        return str(st.secrets[key])
+
+    if section in st.secrets and key.lower() in st.secrets[section]:
+        return str(st.secrets[section][key.lower()])
+
+    return default_value
+
+
+def _load_local_config() -> dict:
+    candidate_paths = ["config.json", str(Path(__file__).with_name("config.json"))]
+    for path in candidate_paths:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                return json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+    return {}
+
+
+def _join_url(base_url: str, endpoint: str) -> str:
+    return f"{base_url.rstrip('/')}/{endpoint.lstrip('/')}"
+
+
+def _http_json(url: str, method: str = "GET", headers: dict | None = None, payload: dict | None = None, timeout: int = 15) -> dict:
+    req_headers = {"Accept": "application/json"}
+    if headers:
+        req_headers.update(headers)
+
+    req_data = None
+    if payload is not None:
+        req_data = json.dumps(payload).encode("utf-8")
+        req_headers["Content-Type"] = "application/json"
+
+    request_obj = urlrequest.Request(url=url, data=req_data, headers=req_headers, method=method)
+    with urlrequest.urlopen(request_obj, timeout=timeout) as response:
+        body = response.read().decode("utf-8")
+    return json.loads(body) if body else {}
+
+
+def fetch_total_vehicles_onboarded(make_filter: str = "SML") -> int:
+    cfg = _load_local_config()
+    auth_cfg = cfg.get("auth", {})
+    registry_cfg = cfg.get("vehicle_registry", {})
+
+    auth_base_url = _get_secret_value("auth", "AUTH_BASE_URL", auth_cfg.get("base_url", ""))
+    auth_endpoint = _get_secret_value("auth", "AUTH_ENDPOINT", auth_cfg.get("endpoint", ""))
+    auth_client_id = _get_secret_value("auth", "AUTH_CLIENT_ID", auth_cfg.get("client_id", ""))
+    auth_client_secret = _get_secret_value("auth", "AUTH_CLIENT_SECRET", auth_cfg.get("client_secret", ""))
+
+    registry_base_url = _get_secret_value(
+        "vehicle_registry", "VEHICLE_REGISTRY_BASE_URL", registry_cfg.get("base_url", "")
+    )
+    registry_endpoint = _get_secret_value(
+        "vehicle_registry", "VEHICLE_REGISTRY_ENDPOINT", registry_cfg.get("endpoint", "")
+    )
+
+    if not all([auth_base_url, auth_endpoint, auth_client_id, auth_client_secret, registry_base_url, registry_endpoint]):
+        raise ValueError("Missing auth/vehicle registry configuration")
+
+    auth_url = _join_url(auth_base_url, auth_endpoint)
+    token_response = _http_json(
+        auth_url,
+        method="POST",
+        payload={"clientId": auth_client_id, "clientSecret": auth_client_secret},
+        timeout=15,
+    )
+
+    access_token = token_response.get("data", {}).get("accessToken")
+    if not access_token:
+        raise RuntimeError("Access token missing in auth response")
+
+    registry_url = _join_url(registry_base_url, registry_endpoint)
+    registry_response = _http_json(
+        registry_url,
+        method="GET",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=20,
+    )
+
+    subscriptions = registry_response.get("data", {}).get("subscriptions", [])
+    ids = set()
+    for item in subscriptions:
+        vehicle = item.get("vehicle", {})
+        make = str(vehicle.get("make", "")).strip().upper()
+        vehicle_id = vehicle.get("vehicleId")
+        if make == make_filter.upper() and vehicle_id:
+            ids.add(str(vehicle_id))
+
+    return len(ids)
 
 
 def _safe_cache_key(container_name: str, year: int, month: int) -> str:
@@ -385,6 +480,14 @@ if stored_key != current_key or "df_results" not in st.session_state:
             st.error(f"Unable to load data: {exc}")
             st.stop()
 
+if "total_vehicles_onboarded" not in st.session_state:
+    try:
+        st.session_state["total_vehicles_onboarded"] = fetch_total_vehicles_onboarded(make_filter="SML")
+        st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state.pop("onboarded_error", None)
+    except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+        st.session_state["onboarded_error"] = str(exc)
+
 if st.button("Refresh Data", use_container_width=False):
     with st.spinner("Refreshing recent hours..."):
         try:
@@ -403,13 +506,26 @@ if st.button("Refresh Data", use_container_width=False):
             )
             st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        except Exception as exc:
+            st.session_state["total_vehicles_onboarded"] = fetch_total_vehicles_onboarded(make_filter="SML")
+            st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            st.session_state.pop("onboarded_error", None)
+        except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
             st.error(f"Unable to refresh recent hours: {exc}")
+            st.session_state["onboarded_error"] = str(exc)
 
 if "last_refresh" in st.session_state:
     st.caption(f"Last refresh: {st.session_state['last_refresh']} (recent hours only)")
 if "cache_loaded_at" in st.session_state:
     st.caption(f"Shared cache updated at: {st.session_state['cache_loaded_at']}")
+
+metric_col, info_col = st.columns([0.35, 0.65])
+with metric_col:
+    st.metric("Total vehicles onboarded", st.session_state.get("total_vehicles_onboarded", "N/A"))
+with info_col:
+    if "onboarded_last_updated" in st.session_state:
+        st.caption(f"Onboarded count last updated at: {st.session_state['onboarded_last_updated']}")
+    if "onboarded_error" in st.session_state:
+        st.caption(f"Onboarded count error: {st.session_state['onboarded_error']}")
 
 df_results = st.session_state["df_results"]
 
