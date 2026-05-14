@@ -1,5 +1,5 @@
 import calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -117,16 +117,88 @@ def count_vehicles_per_hour_for_month(sas_url: str, container_name: str, year: i
     return pd.DataFrame(rows)
 
 
+def count_vehicles_for_hour(container_client: ContainerClient, year: int, month: int, day: int, hour: int) -> dict:
+    hour_path = f"raw-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
+    vehicles = set()
+
+    for blob in container_client.list_blobs(name_starts_with=hour_path):
+        suffix = blob.name[len(hour_path):]
+        if "/" in suffix:
+            vehicles.add(suffix.split("/", 1)[0])
+
+    return {"day": day, "hour": hour, "vehicle_count": len(vehicles)}
+
+
+def fetch_recent_hours(sas_url: str, container_name: str, year: int, month: int, lookback_hours: int = 6) -> pd.DataFrame:
+    if not sas_url or not container_name:
+        return pd.DataFrame()
+
+    now = datetime.now().replace(minute=0, second=0, microsecond=0)
+
+    # For non-current months, incremental refresh does not add value.
+    if (year, month) != (now.year, now.month):
+        return pd.DataFrame()
+
+    start = now - timedelta(hours=max(lookback_hours - 1, 0))
+    container_client = ContainerClient.from_container_url(sas_url)
+
+    rows = []
+    t = start
+    while t <= now:
+        if t.year == year and t.month == month:
+            rows.append(count_vehicles_for_hour(container_client, year, month, t.day, t.hour))
+        t += timedelta(hours=1)
+
+    return pd.DataFrame(rows)
+
+
+def merge_hourly_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.DataFrame:
+    if existing.empty:
+        return updates.copy()
+    if updates.empty:
+        return existing.copy()
+
+    keys = ["day", "hour"]
+    base = existing.set_index(keys).copy()
+    upd = updates.set_index(keys)
+
+    new_idx = upd.index.difference(base.index)
+    base.update(upd)
+    if len(new_idx) > 0:
+        base = pd.concat([base, upd.loc[new_idx]])
+
+    merged = base.reset_index().sort_values(keys).reset_index(drop=True)
+    return merged
+
+
+current_key = (sas_url, container_name, int(year), int(month))
+stored_key = st.session_state.get("dataset_key")
+
+if stored_key != current_key or "df_results" not in st.session_state:
+    with st.spinner("Fetching data..."):
+        try:
+            st.session_state["df_results"] = count_vehicles_per_hour_for_month(
+                sas_url, container_name, int(year), int(month)
+            )
+            st.session_state["dataset_key"] = current_key
+        except Exception as exc:
+            st.error(f"Unable to fetch data: {exc}")
+            st.stop()
+
 if st.button("Refresh Data", use_container_width=False):
-    count_vehicles_per_hour_for_month.clear()
+    with st.spinner("Refreshing recent hours..."):
+        try:
+            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=6)
+            st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
+            st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        except Exception as exc:
+            st.error(f"Unable to refresh recent hours: {exc}")
     st.rerun()
 
-with st.spinner("Fetching data..."):
-    try:
-        df_results = count_vehicles_per_hour_for_month(sas_url, container_name, int(year), int(month))
-    except Exception as exc:
-        st.error(f"Unable to fetch data: {exc}")
-        st.stop()
+if "last_refresh" in st.session_state:
+    st.caption(f"Last refresh: {st.session_state['last_refresh']} (recent hours only)")
+
+df_results = st.session_state["df_results"]
 
 if df_results.empty:
     st.warning("No data available. Check credentials, month/year, and path format.")
