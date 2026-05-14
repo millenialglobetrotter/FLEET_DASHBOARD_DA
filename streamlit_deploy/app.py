@@ -91,7 +91,7 @@ def _http_json(url: str, method: str = "GET", headers: dict | None = None, paylo
     return json.loads(body) if body else {}
 
 
-def fetch_total_vehicles_onboarded(make_filter: str = "SML") -> int:
+def fetch_onboarded_vehicle_summary(make_filter: str = "SML") -> dict:
     cfg = _load_local_config()
     auth_cfg = cfg.get("auth", {})
     registry_cfg = cfg.get("vehicle_registry", {})
@@ -133,14 +133,35 @@ def fetch_total_vehicles_onboarded(make_filter: str = "SML") -> int:
 
     subscriptions = registry_response.get("data", {}).get("subscriptions", [])
     ids = set()
+    model_counts: dict[str, int] = {}
+    variant_counts: dict[str, int] = {}
+
     for item in subscriptions:
         vehicle = item.get("vehicle", {})
         make = str(vehicle.get("make", "")).strip().upper()
         vehicle_id = vehicle.get("vehicleId")
-        if make == make_filter.upper() and vehicle_id:
+        if make != make_filter.upper():
+            continue
+
+        if vehicle_id:
             ids.add(str(vehicle_id))
 
-    return len(ids)
+        model = str(vehicle.get("model", "Unknown")).strip() or "Unknown"
+        variant = str(vehicle.get("variant", "Unknown")).strip() or "Unknown"
+        model_variant = f"{model} | {variant}"
+
+        model_counts[model] = model_counts.get(model, 0) + 1
+        variant_counts[model_variant] = variant_counts.get(model_variant, 0) + 1
+
+    model_df = pd.DataFrame(
+        [{"model": key, "count": value} for key, value in model_counts.items()]
+    ).sort_values("count", ascending=False, ignore_index=True)
+
+    variant_df = pd.DataFrame(
+        [{"model_variant": key, "count": value} for key, value in variant_counts.items()]
+    ).sort_values("count", ascending=False, ignore_index=True)
+
+    return {"total": len(ids), "model_df": model_df, "variant_df": variant_df}
 
 
 def _safe_cache_key(container_name: str, year: int, month: int) -> str:
@@ -482,7 +503,10 @@ if stored_key != current_key or "df_results" not in st.session_state:
 
 if "total_vehicles_onboarded" not in st.session_state:
     try:
-        st.session_state["total_vehicles_onboarded"] = fetch_total_vehicles_onboarded(make_filter="SML")
+        onboarded_summary = fetch_onboarded_vehicle_summary(make_filter="SML")
+        st.session_state["total_vehicles_onboarded"] = onboarded_summary["total"]
+        st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
+        st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
         st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state.pop("onboarded_error", None)
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
@@ -506,7 +530,10 @@ if st.button("Refresh Data", use_container_width=False):
             )
             st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            st.session_state["total_vehicles_onboarded"] = fetch_total_vehicles_onboarded(make_filter="SML")
+            onboarded_summary = fetch_onboarded_vehicle_summary(make_filter="SML")
+            st.session_state["total_vehicles_onboarded"] = onboarded_summary["total"]
+            st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
+            st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
             st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             st.session_state.pop("onboarded_error", None)
         except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
@@ -518,14 +545,23 @@ if "last_refresh" in st.session_state:
 if "cache_loaded_at" in st.session_state:
     st.caption(f"Shared cache updated at: {st.session_state['cache_loaded_at']}")
 
-metric_col, info_col = st.columns([0.35, 0.65])
-with metric_col:
-    st.metric("Total vehicles onboarded", st.session_state.get("total_vehicles_onboarded", "N/A"))
+info_col, metric_col = st.columns([0.65, 0.35])
 with info_col:
     if "onboarded_last_updated" in st.session_state:
         st.caption(f"Onboarded count last updated at: {st.session_state['onboarded_last_updated']}")
     if "onboarded_error" in st.session_state:
         st.caption(f"Onboarded count error: {st.session_state['onboarded_error']}")
+with metric_col:
+    total_onboarded = st.session_state.get("total_vehicles_onboarded", "N/A")
+    st.markdown(
+        f"""
+        <div style="text-align: right; background: #f2faf5; border: 1px solid #b8e0c9; border-radius: 10px; padding: 0.75rem 1rem;">
+            <div style="font-size: 0.95rem; font-weight: 700; color: #1f6f52;">Total vehicles onboarded</div>
+            <div style="font-size: 2rem; font-weight: 800; color: #0f5132; line-height: 1.1;">{total_onboarded}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 df_results = st.session_state["df_results"]
 
@@ -544,7 +580,7 @@ if "active_tab" not in st.session_state:
     st.session_state["active_tab"] = 0
 
 # Tab selector using buttons
-tab_cols = st.columns(3)
+tab_cols = st.columns(4)
 with tab_cols[0]:
     if st.button("📊 Daily Drill-down", use_container_width=True, key="tab_drill_down"):
         st.session_state["active_tab"] = 0
@@ -554,6 +590,9 @@ with tab_cols[1]:
 with tab_cols[2]:
     if st.button("✅ Vehicles Processed", use_container_width=True, key="tab_processed"):
         st.session_state["active_tab"] = 2
+with tab_cols[3]:
+    if st.button("🧭 Onboarded Drill-down", use_container_width=True, key="tab_onboarded"):
+        st.session_state["active_tab"] = 3
 
 st.divider()
 
@@ -670,3 +709,68 @@ if st.session_state["active_tab"] == 2:
             margin={"l": 50, "r": 40, "t": 50, "b": 50},
         )
         st.plotly_chart(fig_processed, use_container_width=True)
+
+# Tab 3: Onboarded Drill-down
+if st.session_state["active_tab"] == 3:
+    model_df = st.session_state.get("onboarded_model_counts", pd.DataFrame())
+    variant_df = st.session_state.get("onboarded_variant_counts", pd.DataFrame())
+
+    if model_df.empty and variant_df.empty:
+        st.info("No onboarded vehicle breakdown available. Please check auth and registry configuration.")
+    else:
+        left_col, right_col = st.columns(2)
+
+        with left_col:
+            if model_df.empty:
+                st.info("No model-level onboarded data available.")
+            else:
+                fig_model = go.Figure()
+                fig_model.add_trace(
+                    go.Bar(
+                        x=model_df["count"],
+                        y=model_df["model"],
+                        orientation="h",
+                        marker={"color": "#2f7fdb"},
+                        text=model_df["count"],
+                        textposition="outside",
+                        hovertemplate="<b>Model:</b> %{y}<br><b>Onboarded:</b> %{x}<extra></extra>",
+                    )
+                )
+                fig_model.update_layout(
+                    title="Onboarded Vehicles by Model",
+                    xaxis_title="Vehicle Count",
+                    yaxis_title="Model",
+                    template="plotly_white",
+                    autosize=True,
+                    showlegend=False,
+                    margin={"l": 80, "r": 40, "t": 50, "b": 50},
+                )
+                st.plotly_chart(fig_model, use_container_width=True)
+
+        with right_col:
+            if variant_df.empty:
+                st.info("No variant-level onboarded data available.")
+            else:
+                variant_display = variant_df.head(25).copy()
+                fig_variant = go.Figure()
+                fig_variant.add_trace(
+                    go.Bar(
+                        x=variant_display["count"],
+                        y=variant_display["model_variant"],
+                        orientation="h",
+                        marker={"color": "#1fa37a"},
+                        text=variant_display["count"],
+                        textposition="outside",
+                        hovertemplate="<b>Model | Variant:</b> %{y}<br><b>Onboarded:</b> %{x}<extra></extra>",
+                    )
+                )
+                fig_variant.update_layout(
+                    title="Top 25 Onboarded Model | Variant",
+                    xaxis_title="Vehicle Count",
+                    yaxis_title="Model | Variant",
+                    template="plotly_white",
+                    autosize=True,
+                    showlegend=False,
+                    margin={"l": 80, "r": 40, "t": 50, "b": 50},
+                )
+                st.plotly_chart(fig_variant, use_container_width=True)
