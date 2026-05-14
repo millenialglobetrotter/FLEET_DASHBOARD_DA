@@ -1,0 +1,15 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Local data and outputs
+data/runs/
+*.xlsx
+~$*.xlsx
+
+# Streamlit local secrets
+.streamlit/secrets.toml
