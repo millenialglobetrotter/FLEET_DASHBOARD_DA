@@ -405,7 +405,6 @@ if st.button("Refresh Data", use_container_width=False):
             st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         except Exception as exc:
             st.error(f"Unable to refresh recent hours: {exc}")
-    st.rerun()
 
 if "last_refresh" in st.session_state:
     st.caption(f"Last refresh: {st.session_state['last_refresh']} (recent hours only)")
@@ -424,9 +423,26 @@ df_results_ist["ist_day"] = df_results_ist["day"] + ((df_results_ist["hour"] + 5
 
 available_days = sorted(df_results_ist["ist_day"].unique())
 
-tab1, tab2, tab3 = st.tabs(["Daily Drill-down", "Heatmap", "Vehicles Processed"])
+# Initialize active tab in session state
+if "active_tab" not in st.session_state:
+    st.session_state["active_tab"] = 0
 
-with tab1:
+# Tab selector using buttons
+tab_cols = st.columns(3)
+with tab_cols[0]:
+    if st.button("📊 Daily Drill-down", use_container_width=True, key="tab_drill_down"):
+        st.session_state["active_tab"] = 0
+with tab_cols[1]:
+    if st.button("🔥 Heatmap", use_container_width=True, key="tab_heatmap"):
+        st.session_state["active_tab"] = 1
+with tab_cols[2]:
+    if st.button("✅ Vehicles Processed", use_container_width=True, key="tab_processed"):
+        st.session_state["active_tab"] = 2
+
+st.divider()
+
+# Tab 0: Daily Drill-down
+if st.session_state["active_tab"] == 0:
     l, m, r = st.columns([0.15, 0.6, 0.25])
     with l:
         st.markdown("**Day**")
@@ -436,6 +452,7 @@ with tab1:
             options=available_days,
             format_func=lambda x: f"Day {int(x)}",
             label_visibility="collapsed",
+            key="selected_day_input",
         )
 
     day_data = df_results_ist[df_results_ist["ist_day"] == selected_day].copy()
@@ -469,7 +486,8 @@ with tab1:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-with tab2:
+# Tab 1: Heatmap
+if st.session_state["active_tab"] == 1:
     pivot = df_results_ist.pivot_table(
         index="ist_day",
         columns="ist_hour",
@@ -505,7 +523,8 @@ with tab2:
     )
     st.plotly_chart(fig_heat, use_container_width=True)
 
-with tab3:
+# Tab 2: Vehicles Processed
+if st.session_state["active_tab"] == 2:
     df_processed = st.session_state.get("df_processed", pd.DataFrame())
     
     if df_processed.empty:
