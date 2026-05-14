@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FLEET ANALYTICS</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap');
+        :root {
+            /* Light Theme Variables */
+            --bg: #f3f4f6;
+            --bg2: #ffffff;
+            --bg3: #f9fafb;
+            --bg4: #e5e7eb;
+            --border: #e5e7eb;
+            --text: #111827;
+            --text2: #4b5563;
+            --text3: #9ca3af;
+            /* Adjusted Colors for better contrast on light */
+            --c: #0891b2; /* Cyan 600 */
+            --cg: #059669; /* Green 600 */
+            --cr: #dc2626; /* Red 600 */
+            --co: #d97706; /* Orange 600 */
+            --cp: #9333ea; /* Purple 600 */
+            --cy: #ca8a04; /* Yellow 600 */
+            --cb: #2563eb; /* Blue 600 */
+        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body{height:100%;overflow:hidden}
+        body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text)}
+        
+        /* --- Header --- */
+        .hdr{height:56px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:relative;z-index:100;flex-shrink:0;box-shadow: 0 1px 2px rgba(0,0,0,0.05)}
+        .logo{display:flex;align-items:center;gap:10px}
+        /* Updated Logo Text Style */
+        .logo-text{font-family:'Arial', sans-serif;font-size:20px;font-weight:800;letter-spacing:1px;color:var(--c);text-transform: uppercase;}
+        
+        .hdr-right{display:flex;align-items:center;gap:12px}
+        .hdr-pill{font-family:'JetBrains Mono',monospace;font-size:11px;padding:4px 12px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);color:var(--text2)}
+        .hdr-pill b{color:var(--c)}
+        
+        /* --- Upload Button --- */
+        .upload-label{display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:6px 16px;border-radius:6px;border:1px solid var(--c);color:var(--c);background:rgba(8,145,178,0.05);cursor:pointer;transition:all .2s;user-select:none}
+        .upload-label:hover{background:rgba(8,145,178,0.1);box-shadow:0 0 0 3px rgba(8,145,178,0.1)}
+        #fileInput{display:none}
+
+        /* --- Layout --- */
+        .layout{display:grid;grid-template-columns:280px 1fr;height:calc(100vh - 56px)}
+        
+        /* --- Sidebar --- */
+        .sidebar{background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+        .stitle{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);padding:16px 16px 6px;font-weight:600}
+        .hint{font-size:11px;color:var(--text3);padding:0 16px 10px;font-style:italic}
+        
+        /* Full height list since details panel removed */
+        .file-list{flex:1;overflow-y:auto;padding:8px 10px} 
+        .file-list::-webkit-scrollbar{width:4px}
+        .file-list::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px}
+        
+        .fbtn{width:100%;text-align:left;background:transparent;border:1px solid transparent;color:var(--text2);padding:8px 10px;border-radius:6px;font-size:12px;cursor:pointer;transition:all .1s;margin-bottom:2px;display:flex;align-items:center;gap:8px}
+        .fbtn:hover{background:var(--bg3);color:var(--text)}
+        .fbtn.sel{background:rgba(8,145,178,0.08);border-color:var(--c);color:var(--c);font-weight:600}
+        .fbtn-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .fbtn-score{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);background:var(--bg);padding:1px 6px;border-radius:9px;flex-shrink:0}
+        .fbtn.sel .fbtn-score{color:var(--c);background:rgba(8,145,178,0.1)}
+        .fbtn-del{width:18px;height:18px;border-radius:4px;border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .14s}
+        .fbtn-del:hover{background:var(--cr);color:#fff}
+        .fbtn-all{font-weight:700;border-bottom:1px solid var(--border);margin-bottom:6px;padding-bottom:8px}
+        .clear-btn{width:100%;text-align:left;background:transparent;border:1px solid var(--border);color:var(--text3);padding:6px 10px;border-radius:6px;font-size:10px;font-family:'JetBrains Mono',monospace;cursor:pointer;transition:all .14s;margin-top:4px}
+        .clear-btn:hover{border-color:var(--cr);color:var(--cr);background:rgba(220,38,38,0.05)}
+
+        /* --- Main Content --- */
+        .main{padding:20px;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+        .main::-webkit-scrollbar{width:6px}
+        .main::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:4px}
+        
+        /* --- Cards & Grids --- */
+        .kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+        .kcard{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;position:relative;overflow:hidden;transition:border-color .2s;box-shadow: 0 1px 2px rgba(0,0,0,0.03)}
+        .kcard::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent,var(--c))}
+        .kcard:hover{border-color:var(--accent,var(--c))}
+        .kcard-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text3);margin-bottom:6px}
+        .kcard-val{font-size:22px;font-weight:700;line-height:1;color:var(--text)}
+        .kcard-sub{font-size:11px;color:var(--text2);margin-top:4px}
+        
+        .score-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+        .scard{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;display:flex;gap:16px;align-items:center}
+        .scard-info{flex:1;min-width:0}
+        .scard-title{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;font-family:'JetBrains Mono',monospace;margin-bottom:4px}
+        .scard-val{font-size:24px;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--text)}
+        .scard-file{font-size:11px;color:var(--text2);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        
+        .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+        .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+        
+        .icard{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;box-shadow: 0 1px 2px rgba(0,0,0,0.03);display:flex;flex-direction:column;}
+        .ict{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text3);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+        .ict .dot{width:6px;height:6px;border-radius:50%}
+        
+        /* --- Lists (Top/Bottom) --- */
+        .rlist{display:flex;flex-direction:column;gap:6px;max-height:100px;overflow-y:auto;padding-right:4px} /* Reduced height for top/bottom 3 */
+        .rlist::-webkit-scrollbar{width:3px}
+        .rlist::-webkit-scrollbar-thumb{background:var(--bg4)}
+        .ritem{display:flex;justify-content:space-between;font-size:11px;padding:4px 6px;background:var(--bg3);border-radius:4px;border-left:2px solid transparent}
+        .ritem span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;color:var(--text2)}
+        .ritem span:last-child{font-family:'JetBrains Mono',monospace;font-weight:600}
+
+        /* --- Standard Rows --- */
+        .ir{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--bg4)}
+        .ir:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
+        .ir-l{font-size:12px;color:var(--text2)}
+        .ir-v{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--text)}
+        .ir-v.g{color:var(--cg)}.ir-v.w{color:var(--co)}.ir-v.b{color:var(--cr)}
+
+        .sec-lbl{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);padding:4px 0;border-bottom:1px solid var(--border);margin-top:8px;margin-bottom:8px}
+
+        /* --- Bars --- */
+        .pbar-track{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-top:4px}
+        .pbar-fill{height:100%;border-radius:2px;transition:width .5s ease}
+        
+        .health-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
+        .health-item{background:var(--bg3);border-radius:6px;padding:10px}
+        .health-name{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-bottom:4px}
+        .health-score{font-size:18px;font-weight:700;font-family:'JetBrains Mono',monospace}
+        .health-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:6px}
+        .health-fill{height:100%;border-radius:2px;transition:width .6s ease}
+
+        .gear-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+        .gear-row:last-child{margin-bottom:0}
+        .gear-lbl{width:24px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text2)}
+        .gear-track{flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
+        .gear-fill{height:100%;border-radius:3px;transition:width .5s}
+        .gear-km{width:45px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text)}
+        .gear-pct{width:32px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3)}
+
+        /* --- Pie Chart Styles --- */
+        .pie-wrapper{display:flex;flex-direction:column;width:100%;}
+        .pie-container{display:flex;align-items:center;gap:20px;width:100%;}
+        .pie-chart{flex:0 0 120px;height:120px;position:relative}
+        .pie-legend{flex:1;display:flex;flex-direction:column;gap:6px;font-size:11px}
+        .legend-item{display:flex;align-items:center;gap:8px}
+        .legend-color{width:10px;height:10px;border-radius:2px}
+        .legend-val{font-family:'JetBrains Mono',monospace;margin-left:auto;font-weight:600}
+        .pie-label{text-anchor:middle;font-family:'JetBrains Mono',monospace;font-size:10px;fill:var(--text2);pointer-events:none}
+        .fuel-summary{margin-top:10px; border-top:1px solid var(--bg4); padding-top:10px;}
+        .fuel-summary .ir{margin-bottom:4px; padding-bottom:0; border:none}
+        .fuel-summary .ir:last-child{margin-bottom:0;}
+
+        /* --- Errors & Empty --- */
+        .err-section{background:rgba(217,119,6,.05);border:1px solid rgba(217,119,6,.2);border-radius:8px;padding:16px}
+        .err-title{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--co);margin-bottom:10px}
+        .err-list{display:flex;flex-wrap:wrap;gap:6px}
+        .err-tag{font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 8px;border-radius:4px;background:var(--bg2);border:1px solid rgba(217,119,6,.2);color:var(--co)}
+        
+        .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:400px;color:var(--text3);gap:16px;border:1px dashed var(--border);border-radius:12px;background:var(--bg2)}
+
+        /* --- Utilities --- */
+        .loader{position:fixed;inset:0;background:rgba(255,255,255,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;opacity:0;pointer-events:none;transition:opacity .25s}
+        .loader.show{opacity:1;pointer-events:auto}
+        .spin{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--c);border-radius:50%;animation:sp .7s linear infinite}
+        @keyframes sp{to{transform:rotate(360deg)}}
+        .toast{position:fixed;top:70px;right:24px;background:var(--bg2);border:1px solid var(--cg);border-radius:8px;padding:10px 20px;font-size:11px;color:var(--cg);z-index:9998;transform:translateX(120%);transition:transform .3s;font-family:'JetBrains Mono',monospace;box-shadow: 0 4px 12px rgba(0,0,0,0.1)}
+        .toast.err{border-color:var(--cr);color:var(--cr)}
+        .toast.show{transform:translateX(0)}
+    </style>
+</head>
+<body>
+
+<div class="hdr">
+    <div class="logo">
+        <!-- Removed Logo Gem -->
+        <div class="logo-text">FLEET ANALYTICS</div>
+    </div>
+    <div class="hdr-right">
+        <div class="hdr-pill"><b id="hFileCount">0</b> files</div>
+        <label class="upload-label" for="fileInput">⬆ Upload JSON</label>
+        <input type="file" id="fileInput" accept=".json" multiple />
+    </div>
+</div>
+
+<div class="layout">
+    <div class="sidebar">
+        <div class="stitle">Data Files</div>
+        <div class="hint">Ctrl+Click to select multiple</div>
+        <div class="file-list" id="fileList"></div>
+        <div style="padding:10px;">
+            <button class="clear-btn" id="clearBtn">✕ Clear All Data</button>
+        </div>
+    </div>
+    
+    <div class="main" id="mainPanel">
+        <div id="emptyState" class="empty">
+            <div style="font-size:40px;opacity:.2">📂</div>
+            <div>No data loaded</div>
+            <div style="font-size:12px">Upload JSON trip files to begin analysis</div>
+        </div>
+        
+        <div id="dashContent" style="display:none;flex-direction:column;gap:16px">
+            <!-- KPIs -->
+            <div class="kpi-row">
+                <div class="kcard" style="--accent:var(--c)">
+                    <div class="kcard-label">Total Distance</div>
+                    <div class="kcard-val" id="kTotalDist">—</div>
+                    <div class="kcard-sub">all selected trips</div>
+                </div>
+                <div class="kcard" style="--accent:var(--co)">
+                    <div class="kcard-label">Total Fuel</div>
+                    <div class="kcard-val" id="kTotalFuel">—</div>
+                    <div class="kcard-sub">consumed</div>
+                </div>
+                <div class="kcard" style="--accent:var(--cp)">
+                    <div class="kcard-label">Avg Economy</div>
+                    <div class="kcard-val" id="kAvgEcon">—</div>
+                    <div class="kcard-sub">km per litre</div>
+                </div>
+            </div>
+
+            <!-- Score Rings: Averages, out of 5 -->
+            <div class="score-row">
+                <div class="scard">
+                    <svg width="60" height="60" viewBox="0 0 64 64">
+                        <circle cx="32" cy="32" r="25" fill="none" stroke="var(--border)" stroke-width="5"/>
+                        <!-- Driver Arc Color Changed to Green (var(--cg)) -->
+                        <circle id="driverArc" cx="32" cy="32" r="25" fill="none" stroke="var(--cg)" stroke-width="5" stroke-dasharray="0 157" stroke-linecap="round" transform="rotate(-90 32 32)" style="transition:stroke-dasharray .6s ease"/>
+                        <!-- Driver Arc Label Color Changed to Green -->
+                        <text x="32" y="36" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="var(--cg)" id="driverArcLbl">—</text>
+                    </svg>
+                    <div class="scard-info">
+                        <div class="scard-title">Avg Driver Score</div>
+                        <!-- Driver Score Value Color Changed to Green -->
+                        <div class="scard-val" id="topDriverScore" style="color:var(--cg)">—</div>
+                        <div class="scard-file" id="topDriverFile">Calculated from selection</div>
+                    </div>
+                </div>
+                <div class="scard">
+                    <svg width="60" height="60" viewBox="0 0 64 64">
+                        <circle cx="32" cy="32" r="25" fill="none" stroke="var(--border)" stroke-width="5"/>
+                        <circle id="fuelArc" cx="32" cy="32" r="25" fill="none" stroke="var(--cg)" stroke-width="5" stroke-dasharray="0 157" stroke-linecap="round" transform="rotate(-90 32 32)" style="transition:stroke-dasharray .6s ease"/>
+                        <text x="32" y="36" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="var(--cg)" id="fuelArcLbl">—</text>
+                    </svg>
+                    <div class="scard-info">
+                        <div class="scard-title">Avg Fuel Score</div>
+                        <div class="scard-val" id="topFuelScore" style="color:var(--cg)">—</div>
+                        <div class="scard-file" id="topFuelFile">Calculated from selection</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fuel Analysis -->
+            <div class="sec-lbl">▸ FUEL ANALYSIS</div>
+            <div class="grid3">
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cg)"></span>Efficiency</div>
+                    <div class="ir"><span class="ir-l">Fuel per 100 km</span><span class="ir-v" id="iFuelPer100">—</span></div>
+                    <div class="ir"><span class="ir-l">Best Economy Trip</span><span class="ir-v g" id="iBestEcon">—</span></div>
+                    <div class="ir"><span class="ir-l">Worst Economy Trip</span><span class="ir-v b" id="iWorstEcon">—</span></div>
+                </div>
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cr)"></span>Fuel Waste Sources</div>
+                    
+                    <!-- Pie Chart + Legend Section -->
+                    <div class="pie-wrapper">
+                        <div class="pie-container" id="pieChartContainer">
+                            <div class="pie-chart">
+                                <svg id="fuelPie" viewBox="0 0 100 100" width="100%" height="100%"></svg>
+                            </div>
+                            <div class="pie-legend" id="pieLegend">
+                                <!-- Legend Items Injected via JS -->
+                            </div>
+                        </div>
+
+                        <!-- Total Waste and Waste % inside the card -->
+                        <div class="fuel-summary">
+                            <div class="ir">
+                                <span class="ir-l">Total Waste</span><span class="ir-v b" id="iTotalWaste">—</span>
+                            </div>
+                            <div class="ir">
+                                <span class="ir-l">Waste %</span><span class="ir-v" id="iWastePct">—</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cb)"></span>Usage Ratios</div>
+                    <div class="ir"><span class="ir-l">Idle Time / Engine ON</span><span class="ir-v" id="iIdleRatio">—</span></div>
+                    <div class="ir"><span class="ir-l">Wrong Gear / Dist</span><span class="ir-v" id="iWrongGearPct">—</span></div>
+                    <div class="ir"><span class="ir-l">Half Clutch / Dist</span><span class="ir-v" id="iHalfClutchPct">—</span></div>
+                    <div class="ir"><span class="ir-l">Overspeed / Dist</span><span class="ir-v" id="iOverPct">—</span></div>
+                    <div class="ir"><span class="ir-l">Coasting Distance</span><span class="ir-v g" id="iCoasting">—</span></div>
+                </div>
+            </div>
+
+            <!-- Safety Events -->
+            <div class="sec-lbl">▸ SAFETY EVENTS</div>
+            <div class="grid3">
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cr)"></span>Harsh Events</div>
+                    <div class="ir"><span class="ir-l">Harsh Braking</span><span class="ir-v" id="iHarshBrake">—</span></div>
+                    <div class="ir"><span class="ir-l">Harsh Acceleration</span><span class="ir-v" id="iHarshAcc">—</span></div>
+                    <div class="ir"><span class="ir-l">Harsh Cornering</span><span class="ir-v" id="iHarshCorn">—</span></div>
+                    <div class="ir"><span class="ir-l">Total Harsh</span><span class="ir-v b" id="iTotalHarsh">—</span></div>
+                </div>
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--co)"></span>Braking Events</div>
+                    <div class="ir"><span class="ir-l">Moderate Braking</span><span class="ir-v" id="iModBrake">—</span></div>
+                    <div class="ir"><span class="ir-l">Harsh Events/100km</span><span class="ir-v" id="iEventsPerKm">—</span></div>
+                </div>
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cp)"></span>Safety Rating</div>
+                    <div id="safetyContent"></div>
+                </div>
+            </div>
+
+            <!-- Speed Profile -->
+            <div class="sec-lbl">▸ SPEED PROFILE</div>
+            <div class="grid3">
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--co)"></span>Speed Stats</div>
+                    <div class="ir"><span class="ir-l">Maximum Speed</span><span class="ir-v" id="iMaxSpeed">—</span></div>
+                    <div class="ir"><span class="ir-l">Avg Speed</span><span class="ir-v" id="iAvgSpd">—</span></div>
+                    <div class="ir"><span class="ir-l">Overspeed Distance</span><span class="ir-v w" id="iOverSpd">—</span></div>
+                </div>
+                <div class="icard" style="grid-column: span 2;">
+                    <div class="ict"><span class="dot" style="background:var(--cr)"></span>High Speed Events (> 80 km/h)</div>
+                    <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Trips recording maximum speeds above 80 km/h</div>
+                    <div class="rlist" id="highSpeedList" style="max-height:100px"></div>
+                </div>
+            </div>
+
+            <!-- Engine & Drivetrain -->
+            <div class="sec-lbl">▸ ENGINE & DRIVETRAIN</div>
+            <div class="grid3">
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cb)"></span>Engine Time</div>
+                    <div class="ir"><span class="ir-l">Engine ON</span><span class="ir-v g" id="iEngOn">—</span></div>
+                    <div class="ir"><span class="ir-l">Engine OFF</span><span class="ir-v" id="iEngOff">—</span></div>
+                    <div class="ir"><span class="ir-l">Idle Duration</span><span class="ir-v w" id="iIdleTime">—</span></div>
+                    <div class="ir"><span class="ir-l">Data Loss Duration</span><span class="ir-v w" id="iDataLoss">—</span></div>
+                </div>
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cp)"></span>Start / Stop</div>
+                    <div class="ir"><span class="ir-l">Engine Start Count</span><span class="ir-v" id="iStartCnt">—</span></div>
+                    <div class="ir"><span class="ir-l">Engine Stop Count</span><span class="ir-v" id="iStopCnt">—</span></div>
+                    <div class="ir"><span class="ir-l">MIL Error Distance</span><span class="ir-v w" id="iMilError">—</span></div>
+                </div>
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cy)"></span>Clutch & Gear Wear</div>
+                    <div class="ir"><span class="ir-l">Half Clutch Distance</span><span class="ir-v w" id="iHalfClutch">—</span></div>
+                    <div class="ir"><span class="ir-l">Wrong Gear Distance</span><span class="ir-v w" id="iWrongGear">—</span></div>
+                </div>
+            </div>
+
+            <!-- Leaderboards: Top 3 and Bottom 3 (Moved Here) -->
+            <div class="grid2">
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cg)"></span>Top 3 Driver Scores</div>
+                    <div class="rlist" id="topDriverList"></div>
+                </div>
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cr)"></span>Bottom 3 Driver Scores</div>
+                    <div class="rlist" id="botDriverList"></div>
+                </div>
+            </div>
+            <div class="grid2">
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cg)"></span>Top 3 Fuel Scores</div>
+                    <div class="rlist" id="topFuelList"></div>
+                </div>
+                <div class="icard">
+                    <div class="ict"><span class="dot" style="background:var(--cr)"></span>Bottom 3 Fuel Scores</div>
+                    <div class="rlist" id="botFuelList"></div>
+                </div>
+            </div>
+
+            <!-- Trip Health (Moved Here) -->
+            <div class="sec-lbl">▸ TRIP HEALTH SCORES (derived / 5)</div>
+            <div class="icard">
+                <div style="font-size:11px;color:var(--text2);margin-bottom:4px">Computed from raw metrics — higher is better</div>
+                <div class="health-grid" id="healthGrid"></div>
+            </div>
+
+            <!-- Gear Distribution -->
+            <div class="sec-lbl">▸ GEAR DISTRIBUTION</div>
+            <div class="icard" style="grid-column: span 2;">
+                <div class="ict"><span class="dot" style="background:var(--c)"></span>Distance per Gear</div>
+                <div id="gearBars"></div>
+            </div>
+
+            <!-- Errors -->
+            <div class="err-section" id="errSection" style="display:none">
+                <div class="err-title">⚠ DATA QUALITY / ERROR SIGNALS</div>
+                <div class="err-list" id="errList"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="loader" id="loader"><div class="spin"></div><div style="font-size:11px;color:var(--text2);font-family:'JetBrains Mono',monospace">Processing...</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+    let days = [], selected = {}, selectAll = true, nextId = 0;
+
+    function parseJsonToDay(raw, filename) {
+        let data = null;
+        try {
+            data = JSON.parse(raw);
+        } catch (e) {
+            showToast(`Parse failed: ${filename}`, true);
+            return null;
+        }
+
+        const ins = data.Score_And_Insights || {};
+        const met = data.Metrics_Data || {};
+        const errs = data.ErrorValues || {};
+
+        if (Array.isArray(ins) && ins[0] === false) {
+             showToast(`Skipped invalid file: ${filename}`, true);
+             return null;
+        }
+        
+        function getVal(obj, key, fallback = 0) {
+            if (!obj || !obj[key]) return fallback;
+            const item = obj[key];
+            return (typeof item === 'object' && item.value !== undefined) ? item.value : fallback;
+        }
+        
+        function getTime(obj, key, fallback = '00:00:00') {
+             if (!obj || !obj[key]) return fallback;
+             const item = obj[key];
+             return (typeof item === 'object' && item.value !== undefined) ? item.value : fallback;
+        }
+        
+        const gearData = getVal(met, 'Gear_Detection', {});
+
+        return {
+            _id: nextId++,
+            date_label: filename.replace('.json', '').replace(/_/g, ' '),
+            source: filename,
+            driver_score: parseFloat(ins.Driver_Score || 0),
+            fuel_score: parseFloat(ins.Fuel_Score || 0),
+            stats: {
+                distance_km: parseFloat(getVal(met, 'Distance_Travelled')),
+                avg_speed: parseFloat(getVal(met, 'Average_Speed')),
+                max_speed: parseFloat(getVal(met, 'Maximum_Speed')),
+                total_fuel_l: parseFloat(getVal(met, 'Total_Fuel_Consumed')),
+                fuel_economy: parseFloat(getVal(met, 'Fuel_Economy')),
+                harsh_acc: parseFloat(getVal(met, 'Harsh_Acceleration')),
+                harsh_brake: parseFloat(getVal(met, 'Harsh_Braking')),
+                harsh_corner: parseFloat(getVal(met, 'Harsh_Cornering')),
+                mod_brake: parseFloat(getVal(met, 'Moderate_Braking')),
+                wrong_gear_km: parseFloat(getVal(met, 'Distance_Travelled_in_Wrong_Gear')),
+                overspeed_km: parseFloat(getVal(met, 'Overspeeding_Distance')),
+                coasting_km: parseFloat(getVal(met, 'Coasting_Distance')),
+                half_clutch_km: parseFloat(getVal(met, 'Distance_Travelled_With_Half_Clutch')),
+                idle_fuel_l: parseFloat(getVal(met, 'Additional_Fuel_Consumed_During_Engine_Idling')),
+                overspeed_fuel_l: parseFloat(getVal(met, 'Additional_Fuel_Consumed_During_Overspeed')),
+                overrev_fuel_l: parseFloat(getVal(met, 'Additional_Fuel_Consumed_During_Engine_Overreving')),
+                mil_error_km: parseFloat(getVal(met, 'MIL_Error')),
+                idle_time: getTime(met, 'Engine_Idling_Duration'),
+                overrev_time: getTime(met, 'Engine_Overreving_Duration'),
+                engine_on: getTime(met, 'Engine_ON_Time'),
+                engine_off: getTime(met, 'Engine_OFF_Time'),
+                data_loss: getTime(met, 'Data_Loss_Duration'),
+                start_count: parseFloat(getVal(met, 'Engine_Start_Count')),
+                stop_count: parseFloat(getVal(met, 'Engine_Stop_Count')),
+                gear_dist: (gearData && typeof gearData === 'object') ? gearData : {},
+                err_signals: Object.keys(errs)
+            }
+        };
+    }
+
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        document.getElementById('loader').classList.add('show');
+        let done = 0, loadedCount = 0;
+        files.forEach(f => {
+            const r = new FileReader();
+            r.onload = (ev) => {
+                const d = parseJsonToDay(ev.target.result, f.name);
+                if (d && !days.some(x => x.source === d.source)) {
+                   days.push(d);
+                   loadedCount++;
+                }
+                if (++done === files.length) {
+                    selectAll = true;
+                    selected = {};
+                    document.getElementById('loader').classList.remove('show');
+                    refresh();
+                    if (loadedCount > 0) {
+                        showToast(`✓ ${loadedCount} file${loadedCount > 1 ? 's' : ''} loaded`);
+                    }
+                }
+            };
+            r.readAsText(f);
+        });
+        this.value = '';
+    });
+
+    function t2s(s) { if (!s) return 0; const p = s.split(':').map(Number); return (p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0); }
+    function s2t(s) { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60; return `${h}h:${m}m:${sec}s`; }
+    function getSelIds() { return selectAll ? days.map(d => d._id) : Object.keys(selected).map(Number); }
+    function byId(id) { return days.find(d => d._id === id); }
+    function set(id, val) { const e = document.getElementById(id); if (e) e.textContent = val; }
+    function showToast(msg, err) { const t = document.getElementById('toast'); t.textContent = msg; t.className = `toast${err ? ' err' : ''} show`; setTimeout(() => t.classList.remove('show'), 3000); }
+    
+    function scColor(v, max) { 
+        const r = v / (max || 5); 
+        return r >= 0.8 ? 'var(--cg)' : r >= 0.5 ? 'var(--co)' : 'var(--cr)'; 
+    }
+    
+    function animArc(id, score, max) { 
+        const arc = document.getElementById(id); 
+        if (!arc) return; 
+        const c = 2 * Math.PI * 25; 
+        const visScore = Math.min(score, max);
+        arc.style.strokeDasharray = `${(c * visScore / max).toFixed(1)} ${c.toFixed(1)}`; 
+    }
+
+    // Helper to create Pie Chart
+    function renderPieChart(idle, over, overrev, total) {
+        const svg = document.getElementById('fuelPie');
+        const legend = document.getElementById('pieLegend');
+        svg.innerHTML = '';
+        legend.innerHTML = '';
+        
+        if (total === 0) {
+            svg.innerHTML = `<circle cx="50" cy="50" r="25" fill="none" stroke="var(--bg4)" stroke-width="15" />`;
+            legend.innerHTML = '<div style="font-size:11px;color:var(--text3)">No waste recorded</div>';
+            return;
+        }
+
+        const data = [
+            { label: 'Idle', val: idle, color: 'var(--cr)' },      // Red
+            { label: 'Overspeed', val: over, color: 'var(--co)' },   // Orange
+            { label: 'Overrev', val: overrev, color: 'var(--cy)' }  // Yellow
+        ];
+
+        let cumulativePercent = 0;
+
+        data.forEach(d => {
+            if (d.val <= 0) return;
+            
+            const percent = d.val / total;
+            const startAngle = cumulativePercent * Math.PI * 2;
+            const endAngle = (cumulativePercent + percent) * Math.PI * 2;
+            
+            const x1 = 50 + 25 * Math.cos(startAngle - Math.PI / 2);
+            const y1 = 50 + 25 * Math.sin(startAngle - Math.PI / 2);
+            const x2 = 50 + 25 * Math.cos(endAngle - Math.PI / 2);
+            const y2 = 50 + 25 * Math.sin(endAngle - Math.PI / 2);
+            
+            const largeArcFlag = percent > 0.5 ? 1 : 0;
+            
+            const pathData = [
+                `M 50 50`,
+                `L ${x1} ${y1}`,
+                `A 25 25 0 ${largeArcFlag} 1 ${x2} ${y2}`,
+                `Z`
+            ].join(' ');
+
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute('d', pathData);
+            path.setAttribute('fill', d.color);
+            path.setAttribute('stroke', 'var(--bg2)');
+            path.setAttribute('stroke-width', '1');
+            svg.appendChild(path);
+
+            const legItem = document.createElement('div');
+            legItem.className = 'legend-item';
+            legItem.innerHTML = `<div class="legend-color" style="background:${d.color}"></div><span>${d.label}</span><span class="legend-val">${d.val.toFixed(2)} L</span>`;
+            legend.appendChild(legItem);
+
+            cumulativePercent += percent;
+        });
+        
+        const hole = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        hole.setAttribute('cx', 50);
+        hole.setAttribute('cy', 50);
+        hole.setAttribute('r', 15);
+        hole.setAttribute('fill', 'var(--bg2)');
+        svg.appendChild(hole);
+    }
+
+    function renderFileList() {
+        const el = document.getElementById('fileList');
+        if (!days.length) { el.innerHTML = '<div style="padding:20px;color:var(--text3);font-size:11px;text-align:center">No files loaded</div>'; return; }
+        const ss = {}; getSelIds().forEach(id => ss[id] = true);
+        let h = `<button class="fbtn fbtn-all${selectAll ? ' sel' : ''}" data-action="all"><span class="fbtn-name">All Files</span><span class="fbtn-score">${days.length}</span></button>`;
+        days.forEach(d => {
+            const sel = !!ss[d._id];
+            h += `<button class="fbtn${sel ? ' sel' : ''}" data-action="day" data-id="${d._id}">` +
+                 `<span class="fbtn-name">${d.date_label}</span>` +
+                 `<span class="fbtn-score">D:${d.driver_score.toFixed(1)}</span>` +
+                 `<span class="fbtn-del" data-del="${d._id}">×</span>` +
+                 `</button>`;
+        });
+        el.innerHTML = h;
+
+        el.querySelectorAll('.fbtn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                if (e.target.classList.contains('fbtn-del')) return;
+                if (this.getAttribute('data-action') === 'all') { selectAll = true; selected = {}; }
+                else {
+                    const id = Number(this.getAttribute('data-id'));
+                    if (e.ctrlKey || e.metaKey) {
+                        selectAll = false;
+                        if (selected[id]) delete selected[id]; else selected[id] = true;
+                        if (!Object.keys(selected).length) selectAll = true;
+                    } else { selectAll = false; selected = {}; selected[id] = true; }
+                }
+                refresh();
+            });
+        });
+        el.querySelectorAll('.fbtn-del').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const id = Number(this.getAttribute('data-del'));
+                days = days.filter(d => d._id !== id);
+                delete selected[id];
+                if (!Object.keys(selected).length) selectAll = true;
+                refresh();
+                showToast('Removed');
+            });
+        });
+        document.getElementById('clearBtn').addEventListener('click', () => { days = []; selected = {}; selectAll = true; refresh(); showToast('Cleared'); });
+    }
+
+    function renderLeaderboards(sel, type) {
+        const key = type + '_score';
+        const sorted = [...sel].sort((a, b) => b[key] - a[key]);
+        const top3 = sorted.slice(0, 3); // Changed from 5 to 3
+        const bot3 = sorted.slice(-3).reverse(); // Changed from 5 to 3
+
+        const mk = (arr, col) => arr.map(d => 
+            `<div class="ritem" style="border-left-color:${col}"><span>${d.date_label}</span><span>${d[key].toFixed(1)}</span></div>`
+        ).join('');
+
+        const color = 'var(--cg)'; 
+        document.getElementById(`top${type.charAt(0).toUpperCase() + type.slice(1)}List`).innerHTML = mk(top3, color);
+        document.getElementById(`bot${type.charAt(0).toUpperCase() + type.slice(1)}List`).innerHTML = mk(bot3, 'var(--cr)');
+    }
+
+    function renderDash() {
+        const ids = getSelIds();
+        const sel = days.filter(d => ids.includes(d._id));
+        const n = sel.length;
+
+        document.getElementById('emptyState').style.display = days.length ? 'none' : 'flex';
+        document.getElementById('dashContent').style.display = days.length ? 'flex' : 'none';
+        if (!days.length) return;
+
+        let totalDist = 0, totalFuel = 0, sumAvgSpd = 0, sumFuelEcon = 0, hB = 0, hA = 0, hC = 0, mB = 0, wGear = 0, overSpd = 0, coast = 0, idleSec = 0, overRevSec = 0, engOnSec = 0, engOffSec = 0, dataLossSec = 0, startCnt = 0, stopCnt = 0, halfClutch = 0, idleFuel = 0, overspeedFuel = 0, overrevFuel = 0, milErr = 0, maxSpd = 0, sumDriverScore = 0, sumFuelScore = 0;
+        const gearTotals = {}, errSet = {};
+        let bestEcon = { val: -1, file: '' }, worstEcon = { val: 9999, file: '' };
+
+        sel.forEach(d => {
+            const s = d.stats;
+            totalDist += s.distance_km; totalFuel += s.total_fuel_l; sumAvgSpd += s.avg_speed; sumFuelEcon += s.fuel_economy;
+            hB += s.harsh_brake; hA += s.harsh_acc; hC += s.harsh_corner; mB += s.mod_brake;
+            wGear += s.wrong_gear_km; overSpd += s.overspeed_km; coast += s.coasting_km;
+            idleSec += t2s(s.idle_time); overRevSec += t2s(s.overrev_time); engOnSec += t2s(s.engine_on); engOffSec += t2s(s.engine_off); dataLossSec += t2s(s.data_loss);
+            startCnt += s.start_count; stopCnt += s.stop_count;
+            halfClutch += s.half_clutch_km; idleFuel += s.idle_fuel_l; overspeedFuel += s.overspeed_fuel_l; overrevFuel += s.overrev_fuel_l; milErr += s.mil_error_km;
+            if (s.max_speed > maxSpd) maxSpd = s.max_speed;
+            Object.keys(s.gear_dist).forEach(g => gearTotals[g] = (gearTotals[g] || 0) + parseFloat(s.gear_dist[g] || 0));
+            s.err_signals.forEach(sig => errSet[sig] = true);
+            
+            sumDriverScore += d.driver_score;
+            sumFuelScore += d.fuel_score;
+
+            if (s.fuel_economy > 0) {
+                if (s.fuel_economy > bestEcon.val) { bestEcon = { val: s.fuel_economy, file: d.date_label }; }
+                if (s.fuel_economy < worstEcon.val) { worstEcon = { val: s.fuel_economy, file: d.date_label }; }
+            }
+        });
+
+        const avgSpd = n ? sumAvgSpd / n : 0;
+        const avgEcon = n ? totalFuel > 0 ? totalDist / totalFuel : 0 : 0;
+        const avgDriver = n ? sumDriverScore / n : 0;
+        const avgFuel = n ? sumFuelScore / n : 0;
+        
+        const totalHarsh = hB + hA + hC;
+        const totalWaste = idleFuel + overspeedFuel + overrevFuel;
+        const wastePct = totalFuel > 0 ? totalWaste / totalFuel * 100 : 0;
+        const idleRatio = engOnSec > 0 ? idleSec / engOnSec * 100 : 0;
+        const fuelPer100 = totalDist > 0 ? totalFuel / totalDist * 100 : 0;
+
+        // KPI
+        set('kTotalDist', `${totalDist.toFixed(1)} km`);
+        set('kTotalFuel', `${totalFuel.toFixed(1)} L`); // Changed to 1 decimal
+        set('kAvgEcon', `${avgEcon.toFixed(1)} km/L`); // Changed to 1 decimal
+        document.getElementById('hFileCount').textContent = days.length;
+
+        // Score Rings
+        set('topDriverScore', avgDriver.toFixed(1)); set('topDriverFile', 'Average of selected');
+        set('topFuelScore', avgFuel.toFixed(1)); set('topFuelFile', 'Average of selected');
+        set('driverArcLbl', avgDriver.toFixed(1)); set('fuelArcLbl', avgFuel.toFixed(1));
+        animArc('driverArc', avgDriver, 5); animArc('fuelArc', avgFuel, 5);
+
+        // Leaderboards (Top/Bottom 3)
+        renderLeaderboards(sel, 'driver');
+        renderLeaderboards(sel, 'fuel');
+
+        // Health Scores
+        function deriveScore(bad, norm) { return Math.max(0, Math.min(5, 5 - bad * norm)).toFixed(1); }
+        const hs = [
+            { name: 'Harsh Events', score: deriveScore(totalHarsh, totalDist > 0 ? 2 / totalDist : 0) }, 
+            { name: 'Fuel Waste', score: deriveScore(wastePct, 0.05) }, 
+            { name: 'Idle Behaviour', score: deriveScore(idleRatio, 0.05) }, 
+            { name: 'Overspeed', score: deriveScore(totalDist > 0 ? overSpd / totalDist * 100 : 0, 0.05) }, 
+            { name: 'Wrong Gear', score: deriveScore(totalDist > 0 ? wGear / totalDist * 100 : 0, 0.05) }, 
+            { name: 'Half Clutch', score: deriveScore(totalDist > 0 ? halfClutch / totalDist * 100 : 0, 0.05) } 
+        ];
+        document.getElementById('healthGrid').innerHTML = hs.map(h => {
+            const col = scColor(parseFloat(h.score), 5);
+            return `<div class="health-item"><div class="health-name">${h.name}</div><div class="health-score" style="color:${col}">${h.score}<span style="font-size:10px;color:var(--text3)">/5</span></div><div class="health-bar"><div class="health-fill" style="width:${(parseFloat(h.score) / 5 * 100).toFixed(0)}%;background:${col}"></div></div></div>`;
+        }).join('');
+
+        // Fuel Analysis
+        set('iFuelPer100', `${fuelPer100.toFixed(2)} L/100km`);
+        set('iBestEcon', bestEcon.file ? `${bestEcon.val.toFixed(2)} km/L — ${bestEcon.file}` : '—');
+        set('iWorstEcon', worstEcon.file && worstEcon.val < 9998 ? `${worstEcon.val.toFixed(2)} km/L — ${worstEcon.file}` : '—');
+        
+        // Pie Chart
+        renderPieChart(idleFuel, overspeedFuel, overrevFuel, totalWaste);
+
+        // Total Waste and Waste % inside Fuel Waste Card
+        set('iTotalWaste', `${totalWaste.toFixed(3)} L`);
+        set('iWastePct', `${wastePct.toFixed(1)}%`);
+        set('iIdleRatio', `${idleRatio.toFixed(1)}%`);
+        set('iWrongGearPct', `${totalDist > 0 ? (wGear / totalDist * 100).toFixed(1) : '0'}%`);
+        set('iHalfClutchPct', `${totalDist > 0 ? (halfClutch / totalDist * 100).toFixed(1) : '0'}%`);
+        set('iOverPct', `${totalDist > 0 ? (overSpd / totalDist * 100).toFixed(2) : '0'}%`);
+        set('iCoasting', `${coast.toFixed(2)} km`);
+
+        // Safety Events
+        set('iHarshBrake', hB); set('iHarshAcc', hA); set('iHarshCorn', hC); set('iTotalHarsh', totalHarsh);
+        set('iModBrake', mB);
+        set('iEventsPerKm', `${totalDist > 0 ? (totalHarsh / totalDist * 100).toFixed(2) : '0'}/100km`);
+        
+        const overPct = totalDist > 0 ? overSpd / totalDist * 100 : 0;
+        const safetyPct = Math.max(0, Math.min(100, 100 - (totalHarsh * 1.5 + mB * 0.5 + overPct * 0.2)));
+        const safetyCol = scColor(safetyPct, 100);
+        const safetyLabel = safetyPct >= 80 ? 'GOOD' : safetyPct >= 50 ? 'MODERATE' : 'NEEDS ATTENTION';
+        document.getElementById('safetyContent').innerHTML = `<div style="font-size:30px;font-weight:700;font-family:'JetBrains Mono',monospace;color:${safetyCol}">${safetyPct.toFixed(0)}<span style="font-size:12px;color:var(--text3)">/100</span></div>` +
+            `<div style="font-size:11px;color:${safetyCol};margin:4px 0 10px">${safetyLabel}</div>` +
+            `<div class="pbar-track"><div class="pbar-fill" style="width:${safetyPct.toFixed(0)}%;background:${safetyCol}"></div></div>` +
+            `<div style="margin-top:10px;font-size:11px;color:var(--text2)">${totalHarsh} harsh events over ${totalDist.toFixed(0)} km</div>`;
+        
+        // Speed Profile
+        set('iMaxSpeed', `${maxSpd.toFixed(0)} km/h`);
+        set('iAvgSpd', `${avgSpd.toFixed(1)} km/h`);
+        set('iOverSpd', `${overSpd.toFixed(2)} km`);
+
+        const fastCars = sel.filter(d => d.stats.max_speed >= 80).sort((a,b) => b.stats.max_speed - a.stats.max_speed);
+        document.getElementById('highSpeedList').innerHTML = fastCars.length ? fastCars.map(d => 
+            `<div class="ritem" style="border-left-color:var(--cr)"><span>${d.date_label}</span><span>${d.stats.max_speed.toFixed(0)} km/h</span></div>`
+        ).join('') : '<div style="color:var(--text3);font-size:11px">No vehicles recorded speeds above 80 km/h</div>';
+
+        // Engine
+        set('iEngOn', s2t(engOnSec)); set('iEngOff', s2t(engOffSec)); set('iIdleTime', s2t(idleSec));
+        set('iDataLoss', s2t(dataLossSec));
+        set('iStartCnt', Math.round(startCnt)); set('iStopCnt', Math.round(stopCnt));
+        set('iMilError', `${milErr.toFixed(2)} km`);
+        set('iHalfClutch', `${halfClutch.toFixed(2)} km`); set('iWrongGear', `${wGear.toFixed(2)} km`);
+        
+        // Gear Distribution
+        const gKeys = Object.keys(gearTotals).sort();
+        const gTotal = gKeys.reduce((a, g) => a + gearTotals[g], 0);
+        const maxG = Math.max(...Object.values(gearTotals)) || 1;
+        const gCols = ['var(--cb)', 'var(--c)', 'var(--cg)', 'var(--cy)', 'var(--co)', 'var(--cp)'];
+        document.getElementById('gearBars').innerHTML = gKeys.length ? gKeys.map((g, i) => {
+            const p = (gearTotals[g] / maxG * 100).toFixed(0);
+            const gp = gTotal > 0 ? (gearTotals[g] / gTotal * 100).toFixed(1) : '0';
+            return `<div class="gear-row"><span class="gear-lbl">${g.replace('Gear_','G')}</span>` +
+                `<div class="gear-track"><div class="gear-fill" style="width:${p}%;background:${gCols[i % gCols.length]}"></div></div>` +
+                `<span class="gear-km">${gearTotals[g].toFixed(1)}</span>` +
+                `<span class="gear-pct">${gp}%</span></div>`;
+        }).join('') : '<div style="color:var(--text3);font-size:12px">No gear data</div>';
+        
+        // Errors
+        const ek = Object.keys(errSet);
+        const es = document.getElementById('errSection');
+        if (ek.length) { es.style.display = 'block'; document.getElementById('errList').innerHTML = ek.map(k => `<span class="err-tag">${k.replace(/_/g,' ')}</span>`).join(''); } 
+        else { es.style.display = 'none'; }
+    }
+
+    function refresh() {
+        renderFileList();
+        renderDash();
+    }
+    refresh();
+</script>
+
+</body>
+</html>

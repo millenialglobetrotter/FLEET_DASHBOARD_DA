@@ -1,0 +1,377 @@
+{
+    "Score_And_Insights": {
+        "Driver_Score": 4.7,
+        "Fuel_Score": 3.8,
+        "Driver_Insights": {
+            "Distance_Travelled_in_Wrong_Gear": 0.23,
+            "Distance_Travelled_With_Half_Clutch": 0.07,
+            "MIL_Error": 0.04
+        },
+        "Fuel_Insights": {
+            "Distance_Travelled_With_Half_Clutch": 0.69,
+            "Distance_Travelled_in_Wrong_Gear": 0.69,
+            "Overspeeding_Distance": 0.02
+        }
+    },
+    "Metrics_Data": {
+        "Harsh_Cornering": {
+            "value": 0.0,
+            "unit": "events"
+        },
+        "Harsh_Cornering_Location": {
+            "value": [],
+            "unit": "lat-lon"
+        },
+        "Distance_Travelled": {
+            "value": 5.449,
+            "unit": "km"
+        },
+        "Average_Speed": {
+            "value": 21.2,
+            "unit": "km/h"
+        },
+        "Harsh_Acceleration": {
+            "value": 0.0,
+            "unit": "events"
+        },
+        "Engine_Spd_distribution": {
+            "value": {
+                "0 - 632": 0.0,
+                "632 - 1264": 2.417,
+                "1264 - 1896": 2.863,
+                "1896 - 2528": 0.168,
+                "2528 - 3160": 0.0
+            },
+            "unit": "x-axis\"ENG_SPD\", y-axis\"Km\""
+        },
+        "Engine_ON_Time": {
+            "value": "00:14:20",
+            "unit": "hh:mm:ss"
+        },
+        "Engine_OFF_Time": {
+            "value": "00:01:06",
+            "unit": "hh:mm:ss"
+        },
+        "Harsh_Braking": {
+            "value": 0.0,
+            "unit": "events"
+        },
+        "MIL_Error": {
+            "value": 5.449,
+            "unit": "km"
+        },
+        "Overspeeding_Distance": {
+            "value": 0.188,
+            "unit": "km"
+        },
+        "Additional_Fuel_Consumed_During_Overspeed": {
+            "value": 0.0018,
+            "unit": "L"
+        },
+        "Engine_Overreving_Duration": {
+            "value": "00:00:00",
+            "unit": "hh:mm:ss"
+        },
+        "Additional_Fuel_Consumed_During_Engine_Overreving": {
+            "value": 0.0,
+            "unit": "L"
+        },
+        "Engine_Start_Count": {
+            "value": 2.0,
+            "unit": "count"
+        },
+        "Engine_Stop_Count": {
+            "value": 1.0,
+            "unit": "count"
+        },
+        "Vehicle_Spd_distribution": {
+            "value": {
+                "0 - 9": 0.0706,
+                "9 - 18": 0.5483,
+                "18 - 27": 1.205,
+                "27 - 36": 1.7317,
+                "36 - 45": 1.2817,
+                "45 - 54": 0.4233
+            },
+            "unit": "x-axis\"VEH_SPD\", y-axis\"Km\""
+        },
+        "Engine_Idling_Duration": {
+            "value": "00:01:36",
+            "unit": "hh:mm:ss"
+        },
+        "Additional_Fuel_Consumed_During_Engine_Idling": {
+            "value": 0.073,
+            "unit": "L"
+        },
+        "Data_Loss_Duration": {
+            "value": "00:15:47",
+            "unit": "hh:mm:ss"
+        },
+        "Distance_Travelled_With_Half_Clutch": {
+            "value": 3.138,
+            "unit": "km"
+        },
+        "Moderate_Braking": {
+            "value": 0.0,
+            "unit": "events"
+        },
+        "Coasting_Distance": {
+            "value": 0.0,
+            "unit": "km"
+        },
+        "Additional_Fuel_Consumed_During_Coasting": {
+            "value": 0.0,
+            "unit": "L"
+        },
+        "Coasting_Location": {
+            "value": [],
+            "unit": "lat-lon"
+        },
+        "Maximum_Speed": {
+            "value": 57.0,
+            "unit": "km/h"
+        },
+        "Total_Fuel_Consumed": {
+            "value": 0.7,
+            "unit": "L"
+        },
+        "Distance_Travelled_in_Wrong_Gear": {
+            "value": 1.616,
+            "unit": "km"
+        },
+        "Wrong_Gear_Location": {
+            "value": [
+                [
+                    17.987753,
+                    79.601654
+                ],
+                [
+                    18.002352,
+                    79.57002
+                ],
+                [
+                    17.988329,
+                    79.59456
+                ],
+                [
+                    17.970083,
+                    79.62794
+                ],
+                [
+                    17.988504,
+                    79.59463
+                ],
+                [
+                    18.003262,
+                    79.57864
+                ],
+                [
+                    17.97161,
+                    79.620674
+                ],
+                [
+                    18.003298,
+                    79.5779
+                ],
+                [
+                    18.002302,
+                    79.57246
+                ],
+                [
+                    17.985111,
+                    79.603195
+                ],
+                [
+                    17.970604,
+                    79.622154
+                ],
+                [
+                    18.002356,
+                    79.5721
+                ],
+                [
+                    17.978622,
+                    79.60853
+                ],
+                [
+                    18.003271,
+                    79.57711
+                ],
+                [
+                    17.973394,
+                    79.61814
+                ],
+                [
+                    18.003307,
+                    79.57878
+                ],
+                [
+                    17.973585,
+                    79.61778
+                ],
+                [
+                    18.002338,
+                    79.57028
+                ],
+                [
+                    18.002258,
+                    79.57278
+                ],
+                [
+                    18.00239,
+                    79.571686
+                ],
+                [
+                    18.002394,
+                    79.57088
+                ],
+                [
+                    18.003273,
+                    79.578255
+                ],
+                [
+                    17.98792,
+                    79.59501
+                ],
+                [
+                    17.987883,
+                    79.5947
+                ],
+                [
+                    17.986715,
+                    79.60224
+                ],
+                [
+                    18.002287,
+                    79.56984
+                ],
+                [
+                    17.987934,
+                    79.60158
+                ],
+                [
+                    17.984741,
+                    79.6034
+                ],
+                [
+                    17.986412,
+                    79.6024
+                ],
+                [
+                    17.988094,
+                    79.5945
+                ],
+                [
+                    17.971525,
+                    79.62077
+                ],
+                [
+                    18.003267,
+                    79.5772
+                ],
+                [
+                    18.002413,
+                    79.571304
+                ],
+                [
+                    17.974007,
+                    79.616875
+                ],
+                [
+                    18.003279,
+                    79.57846
+                ],
+                [
+                    17.970612,
+                    79.622154
+                ],
+                [
+                    17.969856,
+                    79.62767
+                ],
+                [
+                    17.985521,
+                    79.602936
+                ],
+                [
+                    17.971912,
+                    79.620285
+                ],
+                [
+                    17.985994,
+                    79.602646
+                ],
+                [
+                    18.002348,
+                    79.570526
+                ],
+                [
+                    17.970499,
+                    79.62231
+                ],
+                [
+                    17.98794,
+                    79.59449
+                ],
+                [
+                    17.992567,
+                    79.59177
+                ],
+                [
+                    17.984259,
+                    79.6037
+                ],
+                [
+                    17.972246,
+                    79.61982
+                ],
+                [
+                    17.987932,
+                    79.59501
+                ],
+                [
+                    17.98374,
+                    79.60406
+                ]
+            ],
+            "unit": "lat-lon"
+        },
+        "Gear_Detection": {
+            "value": {
+                "Gear_1": 0.158,
+                "Gear_2": 0.0,
+                "Gear_3": 0.487,
+                "Gear_4": 0.326,
+                "Gear_5": 4.478
+            },
+            "unit": "km"
+        },
+        "Fuel_Economy": {
+            "value": 7.784285714285715,
+            "unit": "km/L"
+        }
+    },
+    "ErrorValues": {
+        "Engine_OilPressure": [
+            {
+                "error": "Missing_Mandatory_signal",
+                "from": "2026-05-12T21:17:21",
+                "to": "2026-05-12T21:59:49"
+            }
+        ],
+        "Handbrake_Error": [
+            {
+                "error": "Missing_Mandatory_signal",
+                "from": "2026-05-12T21:17:21",
+                "to": "2026-05-12T21:59:49"
+            }
+        ],
+        "Acceleration_Fluctuation": [
+            {
+                "error": "Missing_Mandatory_signal",
+                "from": "2026-05-12T21:17:21",
+                "to": "2026-05-12T21:59:49"
+            }
+        ]
+    }
+}

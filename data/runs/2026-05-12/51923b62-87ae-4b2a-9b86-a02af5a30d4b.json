@@ -1,0 +1,186 @@
+{
+    "Score_And_Insights": [
+        false,
+        "Missing mandatory signals: Distance_Travelled, Average_Speed"
+    ],
+    "Metrics_Data": {
+        "Engine_Spd_distribution": {
+            "value": {
+                "0 - 632": 0.0,
+                "632 - 1264": 0.0,
+                "1264 - 1896": 0.0,
+                "1896 - 2528": 0.0,
+                "2528 - 3160": 0.0
+            },
+            "unit": "x-axis\"ENG_SPD\", y-axis\"Km\""
+        },
+        "Engine_ON_Time": {
+            "value": "00:00:12",
+            "unit": "hh:mm:ss"
+        },
+        "Engine_OFF_Time": {
+            "value": "00:00:00",
+            "unit": "hh:mm:ss"
+        },
+        "Overspeeding_Distance": {
+            "value": 0.0,
+            "unit": "km"
+        },
+        "Additional_Fuel_Consumed_During_Overspeed": {
+            "value": 0.0,
+            "unit": "L"
+        },
+        "Engine_Overreving_Duration": {
+            "value": "00:00:00",
+            "unit": "hh:mm:ss"
+        },
+        "Additional_Fuel_Consumed_During_Engine_Overreving": {
+            "value": 0.0,
+            "unit": "L"
+        },
+        "Engine_Start_Count": {
+            "value": 0.0,
+            "unit": "count"
+        },
+        "Engine_Stop_Count": {
+            "value": 0.0,
+            "unit": "count"
+        },
+        "Vehicle_Spd_distribution": {
+            "value": {
+                "0 - 9": 0.0,
+                "9 - 18": 0.0,
+                "18 - 27": 0.0,
+                "27 - 36": 0.0,
+                "36 - 45": 0.0,
+                "45 - 54": 0.0
+            },
+            "unit": "x-axis\"VEH_SPD\", y-axis\"Km\""
+        },
+        "Engine_Idling_Duration": {
+            "value": "00:00:00",
+            "unit": "hh:mm:ss"
+        },
+        "Additional_Fuel_Consumed_During_Engine_Idling": {
+            "value": 0.0,
+            "unit": "L"
+        },
+        "Distance_Travelled_With_Half_Clutch": {
+            "value": 0.0,
+            "unit": "km"
+        },
+        "Coasting_Distance": {
+            "value": 0.0,
+            "unit": "km"
+        },
+        "Additional_Fuel_Consumed_During_Coasting": {
+            "value": 0.0,
+            "unit": "L"
+        },
+        "Coasting_Location": {
+            "value": [],
+            "unit": "lat-lon"
+        },
+        "Total_Fuel_Consumed": {
+            "value": 0.009,
+            "unit": "L"
+        },
+        "Fuel_Economy": {
+            "value": 0.0,
+            "unit": "km/L"
+        }
+    },
+    "ErrorValues": {
+        "Harsh_Cornering": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Distance_Travelled": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Average_Speed": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Harsh_Acceleration": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Harsh_Braking": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "MIL_Error": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Engine_OilPressure": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Handbrake_Error": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Acceleration_Fluctuation": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Data_Loss_Duration": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Moderate_Braking": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Maximum_Speed": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ],
+        "Gear_Detection": [
+            {
+                "error": "inadequate_data",
+                "from": "2026-05-12T21:01:41",
+                "to": "2026-05-12T21:01:47"
+            }
+        ]
+    }
+}
