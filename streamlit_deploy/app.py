@@ -33,7 +33,14 @@ st.caption("Vehicle count analytics across hourly partitions (IST)")
 
 
 def _secret_or_default(key: str, default_value):
-    return st.secrets[key] if key in st.secrets else default_value
+    if key in st.secrets:
+        return st.secrets[key]
+
+    # Optional nested secrets support, e.g. [azure] sas_url = "..."
+    if "azure" in st.secrets and key.lower() in st.secrets["azure"]:
+        return st.secrets["azure"][key.lower()]
+
+    return default_value
 
 
 with st.sidebar:
@@ -44,17 +51,28 @@ with st.sidebar:
     default_year = int(_secret_or_default("DEFAULT_YEAR", datetime.now().year))
     default_month = int(_secret_or_default("DEFAULT_MONTH", datetime.now().month))
 
-    sas_url = st.text_input("SAS URL", value=default_sas, help="Container SAS URL")
-    container_name = st.text_input("Container Name", value=default_container)
+    if "sas_url_input" not in st.session_state:
+        st.session_state["sas_url_input"] = default_sas
+    if "container_name_input" not in st.session_state:
+        st.session_state["container_name_input"] = default_container
+    if "year_input" not in st.session_state:
+        st.session_state["year_input"] = default_year
+    if "month_input" not in st.session_state:
+        st.session_state["month_input"] = default_month
+
+    sas_url = st.text_input("SAS URL", key="sas_url_input", help="Container SAS URL")
+    container_name = st.text_input("Container Name", key="container_name_input")
 
     c1, c2 = st.columns(2)
     with c1:
-        year = st.number_input("Year", value=default_year, min_value=2020, max_value=2035)
+        year = st.number_input("Year", key="year_input", min_value=2020, max_value=2035)
     with c2:
-        month = st.number_input("Month", value=default_month, min_value=1, max_value=12)
+        month = st.number_input("Month", key="month_input", min_value=1, max_value=12)
 
     st.divider()
     st.caption("Use Refresh Data to clear cache and fetch latest data from Azure")
+    if not default_sas or not default_container:
+        st.caption("Tip: Set SAS_URL and CONTAINER_NAME in Streamlit secrets for permanent prefill.")
 
 
 @st.cache_data(show_spinner=False)
