@@ -182,9 +182,19 @@ def fetch_onboarded_vehicle_summary(make_filter: str = "SML") -> dict:
         )
         vehicle_key = str(vehicle_id).strip() if str(vehicle_id).strip() else f"__unknown_{index}"
 
-        model = str(_first_non_empty(vehicle, ["model", "vehicleModel"], "Unknown")).strip() or "Unknown"
+        model = str(
+            _first_non_empty(
+                vehicle,
+                ["model", "vehicleModel"],
+                _first_non_empty(item, ["model", "vehicleModel"], "Unknown"),
+            )
+        ).strip() or "Unknown"
         variant = str(
-            _first_non_empty(vehicle, ["variant", "vehicleVariant", "variantName", "subModel", "modelVariant"], "Unknown")
+            _first_non_empty(
+                vehicle,
+                ["variant", "vehicleVariant", "variantName", "subModel", "modelVariant"],
+                _first_non_empty(item, ["variant", "vehicleVariant", "variantName", "subModel", "modelVariant"], "Unknown"),
+            )
         ).strip() or "Unknown"
 
         unique_vehicle_map[vehicle_key] = {"model": model, "variant": variant}
