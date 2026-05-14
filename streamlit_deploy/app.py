@@ -216,7 +216,18 @@ def fetch_onboarded_vehicle_summary(make_filter: str = "SML") -> dict:
         [{"model_variant": key, "count": value} for key, value in variant_counts.items()]
     ).sort_values("count", ascending=False, ignore_index=True)
 
-    return {"total": len(unique_vehicle_map), "model_df": model_df, "variant_df": variant_df}
+    vehicle_model_map = {
+        vehicle_id: details["model"]
+        for vehicle_id, details in unique_vehicle_map.items()
+        if not vehicle_id.startswith("__unknown_")
+    }
+
+    return {
+        "total": len(unique_vehicle_map),
+        "model_df": model_df,
+        "variant_df": variant_df,
+        "vehicle_model_map": vehicle_model_map,
+    }
 
 
 def _safe_cache_key(container_name: str, year: int, month: int) -> str:
@@ -329,6 +340,107 @@ def merge_daily_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.DataFr
         base = pd.concat([base, upd.loc[new_idx]])
 
     return base.reset_index().sort_values(key).reset_index(drop=True)
+
+
+def _recent_days_for_lookback(year: int, month: int, lookback_hours: int = 6) -> list[int]:
+    now = datetime.now().replace(minute=0, second=0, microsecond=0)
+    if (year, month) != (now.year, now.month):
+        return []
+
+    start = now - timedelta(hours=max(lookback_hours - 1, 0))
+    return sorted({t.day for t in [start, now] if t.year == year and t.month == month})
+
+
+def fetch_onboarded_model_presence_for_days(
+    sas_url: str,
+    container_name: str,
+    year: int,
+    month: int,
+    vehicle_model_map: dict[str, str],
+    days: list[int],
+) -> pd.DataFrame:
+    if not sas_url or not container_name or not vehicle_model_map or not days:
+        return pd.DataFrame(columns=["day", "model", "count"])
+
+    container_client = ContainerClient.from_container_url(sas_url)
+    now = datetime.now()
+    rows = []
+
+    for day in sorted(set(days)):
+        if day < 1:
+            continue
+        end_hour = now.hour if (year == now.year and month == now.month and day == now.day) else 23
+
+        # Count each onboarded vehicle only once per day even if present in multiple hours.
+        seen_vehicle_ids = set()
+        for hour in range(end_hour + 1):
+            hour_path = f"raw-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
+            for blob in container_client.list_blobs(name_starts_with=hour_path):
+                suffix = blob.name[len(hour_path):]
+                if "/" in suffix:
+                    vehicle_id = suffix.split("/", 1)[0]
+                    if vehicle_id in vehicle_model_map:
+                        seen_vehicle_ids.add(vehicle_id)
+
+        model_counts: dict[str, int] = {}
+        for vehicle_id in seen_vehicle_ids:
+            model_name = vehicle_model_map.get(vehicle_id, "Unknown")
+            model_counts[model_name] = model_counts.get(model_name, 0) + 1
+
+        for model_name, count in model_counts.items():
+            rows.append({"day": day, "model": model_name, "count": count})
+
+    if not rows:
+        return pd.DataFrame(columns=["day", "model", "count"])
+
+    return pd.DataFrame(rows).sort_values(["day", "model"]).reset_index(drop=True)
+
+
+@st.cache_data(show_spinner=False)
+def fetch_onboarded_model_presence_for_month(
+    sas_url: str,
+    container_name: str,
+    year: int,
+    month: int,
+    vehicle_model_map: dict[str, str],
+) -> pd.DataFrame:
+    if not sas_url or not container_name or not vehicle_model_map:
+        return pd.DataFrame(columns=["day", "model", "count"])
+
+    now = datetime.now()
+    if (year, month) > (now.year, now.month):
+        return pd.DataFrame(columns=["day", "model", "count"])
+
+    _, num_days = calendar.monthrange(year, month)
+    last_day = now.day if (year == now.year and month == now.month) else num_days
+    all_days = list(range(1, last_day + 1))
+
+    return fetch_onboarded_model_presence_for_days(
+        sas_url,
+        container_name,
+        year,
+        month,
+        vehicle_model_map,
+        all_days,
+    )
+
+
+def merge_model_daily_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.DataFrame:
+    if existing.empty:
+        return updates.copy()
+    if updates.empty:
+        return existing.copy()
+
+    keys = ["day", "model"]
+    base = existing.set_index(keys).copy()
+    upd = updates.set_index(keys)
+
+    new_idx = upd.index.difference(base.index)
+    base.update(upd)
+    if len(new_idx) > 0:
+        base = pd.concat([base, upd.loc[new_idx]])
+
+    return base.reset_index().sort_values(keys).reset_index(drop=True)
 
 
 with st.sidebar:
@@ -562,6 +674,14 @@ if "total_vehicles_onboarded" not in st.session_state:
         st.session_state["total_vehicles_onboarded"] = onboarded_summary["total"]
         st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
         st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
+        st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
+        st.session_state["onboarded_presence_df"] = fetch_onboarded_model_presence_for_month(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            st.session_state["onboarded_vehicle_model_map"],
+        )
         st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state.pop("onboarded_error", None)
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
@@ -589,6 +709,18 @@ if st.button("Refresh Data", use_container_width=False):
             st.session_state["total_vehicles_onboarded"] = onboarded_summary["total"]
             st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
             st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
+            st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
+            recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=6)
+            presence_updates = fetch_onboarded_model_presence_for_days(
+                sas_url,
+                container_name,
+                int(year),
+                int(month),
+                st.session_state["onboarded_vehicle_model_map"],
+                recent_days,
+            )
+            existing_presence = st.session_state.get("onboarded_presence_df", pd.DataFrame())
+            st.session_state["onboarded_presence_df"] = merge_model_daily_data(existing_presence, presence_updates)
             st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             st.session_state.pop("onboarded_error", None)
         except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
@@ -769,6 +901,7 @@ if st.session_state["active_tab"] == 2:
 if st.session_state["active_tab"] == 3:
     model_df = st.session_state.get("onboarded_model_counts", pd.DataFrame())
     variant_df = st.session_state.get("onboarded_variant_counts", pd.DataFrame())
+    presence_df = st.session_state.get("onboarded_presence_df", pd.DataFrame())
     total_onboarded = st.session_state.get("total_vehicles_onboarded", 0)
     onboarded_error = st.session_state.get("onboarded_error", "")
 
@@ -836,3 +969,42 @@ if st.session_state["active_tab"] == 3:
                     margin={"l": 80, "r": 40, "t": 50, "b": 50},
                 )
                 st.plotly_chart(fig_variant, use_container_width=True)
+
+        st.divider()
+        st.caption("Daily presence uses raw-data sub-partitions and counts each vehicle ID only once per day.")
+
+        if presence_df.empty:
+            st.info("No onboarded vehicle IDs were found in raw-data sub-partitions for the selected month.")
+        else:
+            available_presence_days = sorted(presence_df["day"].unique())
+            selected_presence_day = st.selectbox(
+                "Select Day for Onboarded Presence",
+                options=available_presence_days,
+                format_func=lambda x: f"Day {int(x)}",
+                key="onboarded_presence_day_input",
+            )
+
+            day_presence = presence_df[presence_df["day"] == selected_presence_day].copy()
+            day_presence = day_presence.sort_values("count", ascending=False)
+
+            fig_presence = go.Figure()
+            fig_presence.add_trace(
+                go.Bar(
+                    x=day_presence["model"],
+                    y=day_presence["count"],
+                    marker={"color": "#0f766e"},
+                    text=day_presence["count"],
+                    textposition="outside",
+                    hovertemplate="<b>Model:</b> %{x}<br><b>Vehicles Present:</b> %{y}<extra></extra>",
+                )
+            )
+            fig_presence.update_layout(
+                title=f"Onboarded Vehicle IDs Present in Raw Data - Day {int(selected_presence_day)}",
+                xaxis_title="Model",
+                yaxis_title="Unique Vehicle IDs Present",
+                template="plotly_white",
+                autosize=True,
+                showlegend=False,
+                margin={"l": 50, "r": 40, "t": 50, "b": 80},
+            )
+            st.plotly_chart(fig_presence, use_container_width=True)
