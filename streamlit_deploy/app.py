@@ -301,7 +301,7 @@ def count_processed_for_day(container_client: ContainerClient, year: int, month:
 
 
 def fetch_recent_processed_days(
-    sas_url: str, container_name: str, year: int, month: int, lookback_hours: int = 6
+    sas_url: str, container_name: str, year: int, month: int, lookback_hours: int = 24
 ) -> pd.DataFrame:
     if not sas_url or not container_name:
         return pd.DataFrame()
@@ -342,7 +342,7 @@ def merge_daily_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.DataFr
     return base.reset_index().sort_values(key).reset_index(drop=True)
 
 
-def _recent_days_for_lookback(year: int, month: int, lookback_hours: int = 6) -> list[int]:
+def _recent_days_for_lookback(year: int, month: int, lookback_hours: int = 24) -> list[int]:
     now = datetime.now().replace(minute=0, second=0, microsecond=0)
     if (year, month) != (now.year, now.month):
         return []
@@ -529,7 +529,7 @@ def count_vehicles_for_hour(container_client: ContainerClient, year: int, month:
     return {"day": day, "hour": hour, "vehicle_count": len(vehicles)}
 
 
-def fetch_recent_hours(sas_url: str, container_name: str, year: int, month: int, lookback_hours: int = 6) -> pd.DataFrame:
+def fetch_recent_hours(sas_url: str, container_name: str, year: int, month: int, lookback_hours: int = 24) -> pd.DataFrame:
     if not sas_url or not container_name:
         return pd.DataFrame()
 
@@ -631,9 +631,9 @@ if stored_key != current_key or "df_results" not in st.session_state:
                 now = datetime.now()
                 # If cache is old for current month, one viewer updates and saves for everyone.
                 if (int(year), int(month)) == (now.year, now.month) and is_cache_stale(cached_at, max_age_minutes=15):
-                    recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=6)
+                    recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
                     recent_processed = fetch_recent_processed_days(
-                        sas_url, container_name, int(year), int(month), lookback_hours=6
+                        sas_url, container_name, int(year), int(month), lookback_hours=24
                     )
                     st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
                     st.session_state["df_processed"] = merge_daily_data(
@@ -690,9 +690,9 @@ if "total_vehicles_onboarded" not in st.session_state:
 if st.button("Refresh Data", use_container_width=False):
     with st.spinner("Refreshing recent hours..."):
         try:
-            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=6)
+            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
             recent_processed = fetch_recent_processed_days(
-                sas_url, container_name, int(year), int(month), lookback_hours=6
+                sas_url, container_name, int(year), int(month), lookback_hours=24
             )
             st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
             st.session_state["df_processed"] = merge_daily_data(st.session_state["df_processed"], recent_processed)
@@ -710,7 +710,7 @@ if st.button("Refresh Data", use_container_width=False):
             st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
             st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
             st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
-            recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=6)
+            recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=24)
             presence_updates = fetch_onboarded_model_presence_for_days(
                 sas_url,
                 container_name,
@@ -728,7 +728,7 @@ if st.button("Refresh Data", use_container_width=False):
             st.session_state["onboarded_error"] = str(exc)
 
 if "last_refresh" in st.session_state:
-    st.caption(f"Last refresh: {st.session_state['last_refresh']} (recent hours only)")
+    st.caption(f"Last refresh: {st.session_state['last_refresh']} (last 24 hours)")
 if "cache_loaded_at" in st.session_state:
     st.caption(f"Shared cache updated at: {st.session_state['cache_loaded_at']}")
 
