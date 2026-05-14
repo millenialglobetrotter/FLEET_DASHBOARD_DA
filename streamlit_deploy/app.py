@@ -173,7 +173,7 @@ def merge_hourly_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.DataF
 
 @st.cache_data(show_spinner=False)
 def count_processed_vehicles_per_day(sas_url: str, container_name: str, year: int, month: int) -> pd.DataFrame:
-    """Fetch unique folder count from result-data path per day."""
+    """Fetch unique sub-partition count from result-data path per day (aggregated across hours)."""
     rows = []
 
     if not sas_url or not container_name:
@@ -188,19 +188,29 @@ def count_processed_vehicles_per_day(sas_url: str, container_name: str, year: in
     _, num_days = calendar.monthrange(year, month)
     last_day = now.day if (year == now.year and month == now.month) else num_days
 
+    total_hours = sum(
+        (now.hour + 1) if (year == now.year and month == now.month and day == now.day) else 24
+        for day in range(1, last_day + 1)
+    )
+    processed = 0
     progress = st.progress(0.0)
 
     for day in range(1, last_day + 1):
-        day_path = f"result-data/{year}/{month:02d}/{day:02d}/"
-        unique_folders = set()
+        unique_partitions = set()
+        end_hour = now.hour if (year == now.year and month == now.month and day == now.day) else 23
+        
+        for hour in range(end_hour + 1):
+            hour_path = f"result-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
+            
+            for blob in container_client.list_blobs(name_starts_with=hour_path):
+                suffix = blob.name[len(hour_path):]
+                if "/" in suffix:
+                    unique_partitions.add(suffix.split("/", 1)[0])
+            
+            processed += 1
+            progress.progress(min(processed / max(total_hours, 1), 1.0))
 
-        for blob in container_client.list_blobs(name_starts_with=day_path):
-            suffix = blob.name[len(day_path):]
-            if "/" in suffix:
-                unique_folders.add(suffix.split("/", 1)[0])
-
-        rows.append({"day": day, "processed_count": len(unique_folders)})
-        progress.progress(min(day / max(last_day, 1), 1.0))
+        rows.append({"day": day, "processed_count": len(unique_partitions)})
 
     progress.empty()
     return pd.DataFrame(rows)
