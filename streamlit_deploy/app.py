@@ -171,6 +171,41 @@ def merge_hourly_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.DataF
     return merged
 
 
+@st.cache_data(show_spinner=False)
+def count_processed_vehicles_per_day(sas_url: str, container_name: str, year: int, month: int) -> pd.DataFrame:
+    """Fetch unique folder count from result-data path per day."""
+    rows = []
+
+    if not sas_url or not container_name:
+        return pd.DataFrame()
+
+    container_client = ContainerClient.from_container_url(sas_url)
+    now = datetime.now()
+
+    if (year, month) > (now.year, now.month):
+        return pd.DataFrame()
+
+    _, num_days = calendar.monthrange(year, month)
+    last_day = now.day if (year == now.year and month == now.month) else num_days
+
+    progress = st.progress(0.0)
+
+    for day in range(1, last_day + 1):
+        day_path = f"result-data/{year}/{month:02d}/{day:02d}/"
+        unique_folders = set()
+
+        for blob in container_client.list_blobs(name_starts_with=day_path):
+            suffix = blob.name[len(day_path):]
+            if "/" in suffix:
+                unique_folders.add(suffix.split("/", 1)[0])
+
+        rows.append({"day": day, "processed_count": len(unique_folders)})
+        progress.progress(min(day / max(last_day, 1), 1.0))
+
+    progress.empty()
+    return pd.DataFrame(rows)
+
+
 current_key = (sas_url, container_name, int(year), int(month))
 stored_key = st.session_state.get("dataset_key")
 
@@ -178,6 +213,9 @@ if stored_key != current_key or "df_results" not in st.session_state:
     with st.spinner("Fetching data..."):
         try:
             st.session_state["df_results"] = count_vehicles_per_hour_for_month(
+                sas_url, container_name, int(year), int(month)
+            )
+            st.session_state["df_processed"] = count_processed_vehicles_per_day(
                 sas_url, container_name, int(year), int(month)
             )
             st.session_state["dataset_key"] = current_key
@@ -210,7 +248,7 @@ df_results_ist["ist_day"] = df_results_ist["day"] + ((df_results_ist["hour"] + 5
 
 available_days = sorted(df_results_ist["ist_day"].unique())
 
-tab1, tab2 = st.tabs(["Daily Drill-down", "Heatmap"])
+tab1, tab2, tab3 = st.tabs(["Daily Drill-down", "Heatmap", "Vehicles Processed"])
 
 with tab1:
     l, m, r = st.columns([0.15, 0.6, 0.25])
@@ -290,3 +328,34 @@ with tab2:
         yaxis={"autorange": "reversed"},
     )
     st.plotly_chart(fig_heat, use_container_width=True)
+
+with tab3:
+    df_processed = st.session_state.get("df_processed", pd.DataFrame())
+    
+    if df_processed.empty:
+        st.info("No processed data available. Check credentials and path format.")
+    else:
+        df_processed_sorted = df_processed.sort_values("day")
+        
+        fig_processed = go.Figure()
+        fig_processed.add_trace(
+            go.Bar(
+                x=df_processed_sorted["day"],
+                y=df_processed_sorted["processed_count"],
+                marker={"color": "seagreen"},
+                text=df_processed_sorted["processed_count"],
+                textposition="outside",
+                hovertemplate="<b>Day:</b> %{x}<br><b>Vehicles Processed:</b> %{y}<extra></extra>",
+            )
+        )
+        fig_processed.update_layout(
+            title=f"Vehicles Processed Per Day - {int(year)}-{int(month):02d}",
+            xaxis_title="Day",
+            yaxis_title="Unique Folders Count",
+            template="plotly_white",
+            autosize=True,
+            showlegend=False,
+            xaxis={"tickmode": "linear", "tick0": 1, "dtick": 1},
+            margin={"l": 50, "r": 40, "t": 50, "b": 50},
+        )
+        st.plotly_chart(fig_processed, use_container_width=True)
