@@ -91,6 +91,36 @@ def _http_json(url: str, method: str = "GET", headers: dict | None = None, paylo
     return json.loads(body) if body else {}
 
 
+def _first_non_empty(source: dict, keys: list[str], default_value: str = ""):
+    for key in keys:
+        value = source.get(key)
+        if value is not None and str(value).strip() != "":
+            return value
+    return default_value
+
+
+def _extract_registry_records(registry_response: dict) -> list[dict]:
+    data = registry_response.get("data", registry_response)
+
+    if isinstance(data, dict):
+        if isinstance(data.get("subscriptions"), list):
+            return data.get("subscriptions", [])
+        if isinstance(data.get("customers"), list):
+            records: list[dict] = []
+            for customer in data.get("customers", []):
+                subs = customer.get("subscriptions", []) if isinstance(customer, dict) else []
+                if isinstance(subs, list):
+                    records.extend(subs)
+            return records
+        if isinstance(data.get("vehicles"), list):
+            return data.get("vehicles", [])
+
+    if isinstance(data, list):
+        return data
+
+    return []
+
+
 def fetch_onboarded_vehicle_summary(make_filter: str = "SML") -> dict:
     cfg = _load_local_config()
     auth_cfg = cfg.get("auth", {})
@@ -131,25 +161,40 @@ def fetch_onboarded_vehicle_summary(make_filter: str = "SML") -> dict:
         timeout=20,
     )
 
-    subscriptions = registry_response.get("data", {}).get("subscriptions", [])
-    ids = set()
-    model_counts: dict[str, int] = {}
-    variant_counts: dict[str, int] = {}
+    records = _extract_registry_records(registry_response)
+    unique_vehicle_map: dict[str, dict] = {}
 
-    for item in subscriptions:
-        vehicle = item.get("vehicle", {})
-        make = str(vehicle.get("make", "")).strip().upper()
-        vehicle_id = vehicle.get("vehicleId")
+    for index, item in enumerate(records):
+        vehicle = item.get("vehicle", item) if isinstance(item, dict) else {}
+        if not isinstance(vehicle, dict):
+            continue
+
+        make = str(
+            _first_non_empty(vehicle, ["make", "vehicleMake"], _first_non_empty(item, ["make", "vehicleMake"], ""))
+        ).strip().upper()
         if make != make_filter.upper():
             continue
 
-        if vehicle_id:
-            ids.add(str(vehicle_id))
+        vehicle_id = _first_non_empty(
+            vehicle,
+            ["vehicleId", "id", "vehicle_id", "registrationNumber", "vehicleNumber"],
+            _first_non_empty(item, ["vehicleId", "id", "vehicle_id", "registrationNumber", "vehicleNumber"], ""),
+        )
+        vehicle_key = str(vehicle_id).strip() if str(vehicle_id).strip() else f"__unknown_{index}"
 
-        model = str(vehicle.get("model", "Unknown")).strip() or "Unknown"
-        variant = str(vehicle.get("variant", "Unknown")).strip() or "Unknown"
+        model = str(_first_non_empty(vehicle, ["model", "vehicleModel"], "Unknown")).strip() or "Unknown"
+        variant = str(
+            _first_non_empty(vehicle, ["variant", "vehicleVariant", "variantName", "subModel", "modelVariant"], "Unknown")
+        ).strip() or "Unknown"
+
+        unique_vehicle_map[vehicle_key] = {"model": model, "variant": variant}
+
+    model_counts: dict[str, int] = {}
+    variant_counts: dict[str, int] = {}
+    for details in unique_vehicle_map.values():
+        model = details["model"]
+        variant = details["variant"]
         model_variant = f"{model} | {variant}"
-
         model_counts[model] = model_counts.get(model, 0) + 1
         variant_counts[model_variant] = variant_counts.get(model_variant, 0) + 1
 
@@ -161,7 +206,7 @@ def fetch_onboarded_vehicle_summary(make_filter: str = "SML") -> dict:
         [{"model_variant": key, "count": value} for key, value in variant_counts.items()]
     ).sort_values("count", ascending=False, ignore_index=True)
 
-    return {"total": len(ids), "model_df": model_df, "variant_df": variant_df}
+    return {"total": len(unique_vehicle_map), "model_df": model_df, "variant_df": variant_df}
 
 
 def _safe_cache_key(container_name: str, year: int, month: int) -> str:
@@ -714,9 +759,16 @@ if st.session_state["active_tab"] == 2:
 if st.session_state["active_tab"] == 3:
     model_df = st.session_state.get("onboarded_model_counts", pd.DataFrame())
     variant_df = st.session_state.get("onboarded_variant_counts", pd.DataFrame())
+    total_onboarded = st.session_state.get("total_vehicles_onboarded", 0)
+    onboarded_error = st.session_state.get("onboarded_error", "")
 
     if model_df.empty and variant_df.empty:
-        st.info("No onboarded vehicle breakdown available. Please check auth and registry configuration.")
+        if onboarded_error:
+            st.error(f"Unable to fetch onboarded breakdown: {onboarded_error}")
+        elif total_onboarded == 0:
+            st.info("No onboarded SML vehicles found from vehicle registry response.")
+        else:
+            st.info("Onboarded vehicles found, but model/variant fields are missing in the registry response.")
     else:
         left_col, right_col = st.columns(2)
 
