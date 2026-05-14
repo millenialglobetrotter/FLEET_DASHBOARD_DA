@@ -1,5 +1,8 @@
 import calendar
 from datetime import datetime, timedelta
+import json
+import os
+from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -31,6 +34,8 @@ st.markdown(
 st.title("Fleet Level Dashboard")
 st.caption("Vehicle count analytics across hourly partitions (IST)")
 
+CACHE_DIR = Path("streamlit_deploy") / "data_cache"
+
 
 def _secret_or_default(key: str, default_value):
     if key in st.secrets:
@@ -41,6 +46,118 @@ def _secret_or_default(key: str, default_value):
         return st.secrets["azure"][key.lower()]
 
     return default_value
+
+
+def _safe_cache_key(container_name: str, year: int, month: int) -> str:
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in container_name.lower()).strip("_")
+    if not cleaned:
+        cleaned = "default"
+    return f"{cleaned}_{year}_{month:02d}"
+
+
+def _cache_paths(container_name: str, year: int, month: int):
+    key = _safe_cache_key(container_name, year, month)
+    raw_path = CACHE_DIR / f"raw_{key}.csv"
+    processed_path = CACHE_DIR / f"processed_{key}.csv"
+    meta_path = CACHE_DIR / f"meta_{key}.json"
+    return raw_path, processed_path, meta_path
+
+
+def load_cached_datasets(container_name: str, year: int, month: int):
+    raw_path, processed_path, meta_path = _cache_paths(container_name, year, month)
+    raw_df = pd.DataFrame()
+    processed_df = pd.DataFrame()
+    cached_at = None
+
+    if raw_path.exists():
+        raw_df = pd.read_csv(raw_path)
+    if processed_path.exists():
+        processed_df = pd.read_csv(processed_path)
+    if meta_path.exists():
+        try:
+            with open(meta_path, "r", encoding="utf-8") as meta_file:
+                meta = json.load(meta_file)
+                cached_at = meta.get("cached_at")
+        except (OSError, json.JSONDecodeError):
+            cached_at = None
+
+    return raw_df, processed_df, cached_at
+
+
+def save_cached_datasets(container_name: str, year: int, month: int, raw_df: pd.DataFrame, processed_df: pd.DataFrame):
+    raw_path, processed_path, meta_path = _cache_paths(container_name, year, month)
+    os.makedirs(CACHE_DIR, exist_ok=True)
+
+    raw_df.to_csv(raw_path, index=False)
+    processed_df.to_csv(processed_path, index=False)
+
+    with open(meta_path, "w", encoding="utf-8") as meta_file:
+        json.dump({"cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, meta_file)
+
+
+def is_cache_stale(cached_at: str, max_age_minutes: int = 15) -> bool:
+    if not cached_at:
+        return True
+    try:
+        cached_time = datetime.strptime(cached_at, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return True
+    return datetime.now() - cached_time >= timedelta(minutes=max_age_minutes)
+
+
+def count_processed_for_day(container_client: ContainerClient, year: int, month: int, day: int, end_hour: int) -> dict:
+    unique_partitions = set()
+
+    for hour in range(end_hour + 1):
+        hour_path = f"result-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
+        for blob in container_client.list_blobs(name_starts_with=hour_path):
+            suffix = blob.name[len(hour_path):]
+            if "/" in suffix:
+                unique_partitions.add(suffix.split("/", 1)[0])
+
+    return {"day": day, "processed_count": len(unique_partitions)}
+
+
+def fetch_recent_processed_days(
+    sas_url: str, container_name: str, year: int, month: int, lookback_hours: int = 6
+) -> pd.DataFrame:
+    if not sas_url or not container_name:
+        return pd.DataFrame()
+
+    now = datetime.now().replace(minute=0, second=0, microsecond=0)
+    if (year, month) != (now.year, now.month):
+        return pd.DataFrame()
+
+    start = now - timedelta(hours=max(lookback_hours - 1, 0))
+    affected_days = sorted({t.day for t in [start, now] if t.year == year and t.month == month})
+    if start.day != now.day and start.year == year and start.month == month and now.year == year and now.month == month:
+        affected_days = list(range(start.day, now.day + 1))
+
+    container_client = ContainerClient.from_container_url(sas_url)
+    rows = []
+    for day in affected_days:
+        end_hour = now.hour if day == now.day else 23
+        rows.append(count_processed_for_day(container_client, year, month, day, end_hour))
+
+    return pd.DataFrame(rows)
+
+
+def merge_daily_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.DataFrame:
+    if existing.empty:
+        return updates.copy()
+    if updates.empty:
+        return existing.copy()
+
+    key = ["day"]
+    base = existing.set_index(key).copy()
+    upd = updates.set_index(key)
+
+    new_idx = upd.index.difference(base.index)
+    base.update(upd)
+    if len(new_idx) > 0:
+        base = pd.concat([base, upd.loc[new_idx]])
+
+    return base.reset_index().sort_values(key).reset_index(drop=True)
 
 
 with st.sidebar:
@@ -70,7 +187,7 @@ with st.sidebar:
         month = st.number_input("Month", key="month_input", min_value=1, max_value=12)
 
     st.divider()
-    st.caption("Use Refresh Data to clear cache and fetch latest data from Azure")
+    st.caption("Shared cache is reused across users. Refresh updates recent data and saves for everyone.")
     if not default_sas or not default_container:
         st.caption("Tip: Set SAS_URL and CONTAINER_NAME in Streamlit secrets for permanent prefill.")
 
@@ -220,24 +337,71 @@ current_key = (sas_url, container_name, int(year), int(month))
 stored_key = st.session_state.get("dataset_key")
 
 if stored_key != current_key or "df_results" not in st.session_state:
-    with st.spinner("Fetching data..."):
+    with st.spinner("Loading shared cache..."):
         try:
-            st.session_state["df_results"] = count_vehicles_per_hour_for_month(
-                sas_url, container_name, int(year), int(month)
-            )
-            st.session_state["df_processed"] = count_processed_vehicles_per_day(
-                sas_url, container_name, int(year), int(month)
-            )
+            cached_raw, cached_processed, cached_at = load_cached_datasets(container_name, int(year), int(month))
+            if not cached_raw.empty and not cached_processed.empty:
+                st.session_state["df_results"] = cached_raw
+                st.session_state["df_processed"] = cached_processed
+                st.session_state["cache_loaded_at"] = cached_at
+
+                now = datetime.now()
+                # If cache is old for current month, one viewer updates and saves for everyone.
+                if (int(year), int(month)) == (now.year, now.month) and is_cache_stale(cached_at, max_age_minutes=15):
+                    recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=6)
+                    recent_processed = fetch_recent_processed_days(
+                        sas_url, container_name, int(year), int(month), lookback_hours=6
+                    )
+                    st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
+                    st.session_state["df_processed"] = merge_daily_data(
+                        st.session_state["df_processed"], recent_processed
+                    )
+                    save_cached_datasets(
+                        container_name,
+                        int(year),
+                        int(month),
+                        st.session_state["df_results"],
+                        st.session_state["df_processed"],
+                    )
+                    st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                st.session_state["df_results"] = count_vehicles_per_hour_for_month(
+                    sas_url, container_name, int(year), int(month)
+                )
+                st.session_state["df_processed"] = count_processed_vehicles_per_day(
+                    sas_url, container_name, int(year), int(month)
+                )
+                save_cached_datasets(
+                    container_name,
+                    int(year),
+                    int(month),
+                    st.session_state["df_results"],
+                    st.session_state["df_processed"],
+                )
+                st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
             st.session_state["dataset_key"] = current_key
         except Exception as exc:
-            st.error(f"Unable to fetch data: {exc}")
+            st.error(f"Unable to load data: {exc}")
             st.stop()
 
 if st.button("Refresh Data", use_container_width=False):
     with st.spinner("Refreshing recent hours..."):
         try:
             recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=6)
+            recent_processed = fetch_recent_processed_days(
+                sas_url, container_name, int(year), int(month), lookback_hours=6
+            )
             st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
+            st.session_state["df_processed"] = merge_daily_data(st.session_state["df_processed"], recent_processed)
+            save_cached_datasets(
+                container_name,
+                int(year),
+                int(month),
+                st.session_state["df_results"],
+                st.session_state["df_processed"],
+            )
+            st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         except Exception as exc:
             st.error(f"Unable to refresh recent hours: {exc}")
@@ -245,6 +409,8 @@ if st.button("Refresh Data", use_container_width=False):
 
 if "last_refresh" in st.session_state:
     st.caption(f"Last refresh: {st.session_state['last_refresh']} (recent hours only)")
+if "cache_loaded_at" in st.session_state:
+    st.caption(f"Shared cache updated at: {st.session_state['cache_loaded_at']}")
 
 df_results = st.session_state["df_results"]
 
