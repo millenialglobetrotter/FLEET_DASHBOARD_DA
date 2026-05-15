@@ -12,13 +12,29 @@ import streamlit as st
 def secret_or_default(key: str, default_value: Any) -> Any:
     """Get secret value from Streamlit secrets or return default.
     
-    Supports nested secrets, e.g., [azure] sas_url = "..."
+    Supports multiple naming conventions:
+    - Top-level: key
+    - Nested under 'azure': [azure] key
+    - Case-insensitive fallback for both
     """
+    # Try exact match at top level
     if key in st.secrets:
         return st.secrets[key]
     
+    # Try case-insensitive at top level
+    for secret_key in st.secrets:
+        if secret_key.lower() == key.lower():
+            return st.secrets[secret_key]
+    
+    # Try nested under 'azure' section (exact)
     if "azure" in st.secrets and key.lower() in st.secrets["azure"]:
         return st.secrets["azure"][key.lower()]
+    
+    # Try nested under 'azure' section (case-insensitive)
+    if "azure" in st.secrets and isinstance(st.secrets["azure"], dict):
+        for secret_key in st.secrets["azure"]:
+            if secret_key.lower() == key.lower():
+                return st.secrets["azure"][secret_key]
     
     return default_value
 
@@ -88,6 +104,12 @@ def http_json(
     with urlrequest.urlopen(request_obj, timeout=timeout) as response:
         body = response.read().decode("utf-8")
     return json.loads(body) if body else {}
+
+
+def get_secret_keys() -> list[str]:
+    """Get list of all available secret keys for debugging."""
+    keys = list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else []
+    return keys
 
 
 def first_non_empty(source: dict, keys: list[str], default_value: str = "") -> str:

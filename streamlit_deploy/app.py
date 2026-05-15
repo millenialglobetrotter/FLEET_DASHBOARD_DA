@@ -19,6 +19,7 @@ from utils import (
     get_secret_value,
     load_local_config,
     first_non_empty,
+    get_secret_keys,
 )
 from data_fetchers import (
     fetch_onboarded_vehicle_summary,
@@ -537,7 +538,20 @@ with st.sidebar:
     st.divider()
     st.caption("Shared cache is reused across users. Refresh updates recent data and saves for everyone.")
     if not default_sas or not default_container:
+        st.warning("⚠️ SAS_URL and/or CONTAINER_NAME not configured in secrets. Please enter them above.")
         st.caption("Tip: Set SAS_URL and CONTAINER_NAME in Streamlit secrets for permanent prefill.")
+        
+        # Show available secrets for debugging
+        available_keys = get_secret_keys()
+        if available_keys:
+            with st.expander("ℹ️ Available secrets (debug info)"):
+                st.write("Keys found in secrets:")
+                for key in available_keys:
+                    st.text(f"  • {key}")
+        else:
+            st.caption("ℹ️ No secrets configured. Create a .streamlit/secrets.toml file with SAS_URL and CONTAINER_NAME.")
+    else:
+        st.success("✓ Credentials loaded from secrets")
 
 
 @st.cache_data(show_spinner=False)
