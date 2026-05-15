@@ -514,6 +514,74 @@ def fetch_onboarded_model_presence_for_month(
     )
 
 
+@st.cache_data(show_spinner=False)
+def fetch_onboarded_vehicle_hours_for_month(
+    sas_url: str,
+    container_name: str,
+    year: int,
+    month: int,
+    vehicle_details_map: dict[str, dict[str, str]],
+) -> pd.DataFrame:
+    """Count hourly raw-data appearances for onboarded vehicle IDs across the selected month."""
+    empty_df = pd.DataFrame(columns=["vehicle_id", "model", "variant", "operating_hours", "active_days"])
+
+    if not sas_url or not container_name or not vehicle_details_map:
+        return empty_df
+
+    now = datetime.now()
+    if (year, month) > (now.year, now.month):
+        return empty_df
+
+    _, num_days = calendar.monthrange(year, month)
+    last_day = now.day if (year == now.year and month == now.month) else num_days
+
+    container_client = ContainerClient.from_container_url(sas_url)
+    vehicle_day_hours: dict[str, set[tuple[int, int]]] = {}
+
+    for day in range(1, last_day + 1):
+        end_hour = now.hour if (year == now.year and month == now.month and day == now.day) else 23
+        for hour in range(end_hour + 1):
+            hour_path = f"raw-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
+            seen_this_hour = set()
+
+            for blob in container_client.list_blobs(name_starts_with=hour_path):
+                suffix = blob.name[len(hour_path):]
+                if "/" not in suffix:
+                    continue
+
+                vehicle_id = suffix.split("/", 1)[0]
+                if vehicle_id in vehicle_details_map:
+                    seen_this_hour.add(vehicle_id)
+
+            for vehicle_id in seen_this_hour:
+                if vehicle_id not in vehicle_day_hours:
+                    vehicle_day_hours[vehicle_id] = set()
+                vehicle_day_hours[vehicle_id].add((day, hour))
+
+    rows = []
+    for vehicle_id, day_hour_pairs in vehicle_day_hours.items():
+        details = vehicle_details_map.get(vehicle_id, {})
+        model_name = details.get("model", "Unknown") or "Unknown"
+        variant_name = details.get("variant", "Unknown") or "Unknown"
+        rows.append(
+            {
+                "vehicle_id": vehicle_id,
+                "model": model_name,
+                "variant": variant_name,
+                "operating_hours": len(day_hour_pairs),
+                "active_days": len({day for day, _ in day_hour_pairs}),
+            }
+        )
+
+    if not rows:
+        return empty_df
+
+    return pd.DataFrame(rows).sort_values(
+        ["operating_hours", "active_days", "vehicle_id"],
+        ascending=[False, False, True],
+    ).reset_index(drop=True)
+
+
 def merge_model_daily_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.DataFrame:
     if existing.empty:
         return updates.copy()
@@ -834,6 +902,13 @@ if "total_vehicles_onboarded" not in st.session_state:
             int(month),
             st.session_state["onboarded_vehicle_model_map"],
         )
+        st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            st.session_state["onboarded_vehicle_details_map"],
+        )
         st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state.pop("onboarded_error", None)
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
@@ -855,6 +930,13 @@ if st.session_state.get("onboarded_presence_bootstrap_key") != onboarded_auto_re
         )
         existing_presence = st.session_state.get("onboarded_presence_df", pd.DataFrame())
         st.session_state["onboarded_presence_df"] = merge_model_daily_data(existing_presence, presence_updates)
+        st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            st.session_state.get("onboarded_vehicle_details_map", {}),
+        )
         st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state["onboarded_presence_bootstrap_key"] = onboarded_auto_refresh_key
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
@@ -895,6 +977,13 @@ if st.button("Refresh Data", use_container_width=False):
             )
             existing_presence = st.session_state.get("onboarded_presence_df", pd.DataFrame())
             st.session_state["onboarded_presence_df"] = merge_model_daily_data(existing_presence, presence_updates)
+            st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
+                sas_url,
+                container_name,
+                int(year),
+                int(month),
+                st.session_state["onboarded_vehicle_details_map"],
+            )
             st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             st.session_state.pop("onboarded_error", None)
         except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
@@ -1288,3 +1377,45 @@ if st.session_state["active_tab"] == 3:
                 margin={"l": 50, "r": 40, "t": 50, "b": 80},
             )
             st.plotly_chart(fig_presence, use_container_width=True)
+
+            st.divider()
+            st.markdown("**Highest Operating Vehicles by Model**")
+            st.caption("Counts hourly raw-data partition appearances for onboarded vehicle IDs across the selected month.")
+
+            vehicle_hours_df = st.session_state.get("onboarded_vehicle_hours_df", pd.DataFrame())
+            if vehicle_hours_df.empty:
+                st.info("No operating-hours data available for onboarded vehicles in the selected month.")
+            else:
+                available_models = sorted(vehicle_hours_df["model"].dropna().unique())
+                selected_hours_model = st.selectbox(
+                    "Select Model to View Highest Operating Vehicles",
+                    options=available_models,
+                    key="onboarded_hours_model_input",
+                )
+
+                model_vehicles = vehicle_hours_df[vehicle_hours_df["model"] == selected_hours_model].copy()
+                model_vehicles = model_vehicles.sort_values(["operating_hours", "active_days"], ascending=[False, False]).head(20)
+
+                if model_vehicles.empty:
+                    st.info(f"No operating-hours data available for model: {selected_hours_model}")
+                else:
+                    display_df = model_vehicles[["vehicle_id", "variant", "operating_hours", "active_days"]].copy()
+                    display_df = display_df.rename(
+                        columns={
+                            "vehicle_id": "Vehicle ID",
+                            "variant": "Variant",
+                            "operating_hours": "Operating Hours",
+                            "active_days": "Active Days",
+                        }
+                    )
+                    st.dataframe(
+                        display_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Vehicle ID": st.column_config.TextColumn("Vehicle ID", width="medium"),
+                            "Variant": st.column_config.TextColumn("Variant", width="medium"),
+                            "Operating Hours": st.column_config.NumberColumn("Operating Hours", format="%d"),
+                            "Active Days": st.column_config.NumberColumn("Active Days", format="%d"),
+                        },
+                    )
