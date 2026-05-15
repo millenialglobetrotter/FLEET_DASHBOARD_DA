@@ -511,10 +511,10 @@ def fetch_processed_model_vehicleids_for_day(
 with st.sidebar:
     st.header("Settings")
 
-    default_sas = _secret_or_default("SAS_URL", "")
-    default_container = _secret_or_default("CONTAINER_NAME", "")
-    default_year = int(_secret_or_default("DEFAULT_YEAR", datetime.now().year))
-    default_month = int(_secret_or_default("DEFAULT_MONTH", datetime.now().month))
+    default_sas = secret_or_default("SAS_URL", "")
+    default_container = secret_or_default("CONTAINER_NAME", "")
+    default_year = int(secret_or_default("DEFAULT_YEAR", datetime.now().year))
+    default_month = int(secret_or_default("DEFAULT_MONTH", datetime.now().month))
 
     if "sas_url_input" not in st.session_state:
         st.session_state["sas_url_input"] = default_sas
