@@ -222,11 +222,18 @@ def fetch_onboarded_vehicle_summary(make_filter: str = "SML") -> dict:
         if not vehicle_id.startswith("__unknown_")
     }
 
+    vehicle_details_map = {
+        vehicle_id: {"model": details["model"], "variant": details["variant"]}
+        for vehicle_id, details in unique_vehicle_map.items()
+        if not vehicle_id.startswith("__unknown_")
+    }
+
     return {
         "total": len(unique_vehicle_map),
         "model_df": model_df,
         "variant_df": variant_df,
         "vehicle_model_map": vehicle_model_map,
+        "vehicle_details_map": vehicle_details_map,
     }
 
 
@@ -449,14 +456,14 @@ def fetch_processed_model_vehicleids_for_day(
     year: int,
     month: int,
     day: int,
-    vehicle_model_map: dict[str, str],
+    vehicle_details_map: dict[str, dict[str, str]],
 ) -> pd.DataFrame:
     if not sas_url or not container_name or day < 1:
-        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "vehicle_count", "vehicle_ids"])
+        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "variant", "vehicle_count", "vehicle_ids"])
 
     now = datetime.now()
     if (year, month, day) > (now.year, now.month, now.day):
-        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "vehicle_count", "vehicle_ids"])
+        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "variant", "vehicle_count", "vehicle_ids"])
 
     end_hour = now.hour if (year, month, day) == (now.year, now.month, now.day) else 23
     container_client = ContainerClient.from_container_url(sas_url)
@@ -464,7 +471,7 @@ def fetch_processed_model_vehicleids_for_day(
 
     for hour in range(end_hour + 1):
         hour_path = f"result-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
-        model_vehicle_ids: dict[str, set[str]] = {}
+        model_variant_vehicle_ids: dict[tuple[str, str], set[str]] = {}
 
         for blob in container_client.list_blobs(name_starts_with=hour_path):
             suffix = blob.name[len(hour_path):]
@@ -472,12 +479,15 @@ def fetch_processed_model_vehicleids_for_day(
                 continue
 
             vehicle_id = suffix.split("/", 1)[0]
-            model_name = vehicle_model_map.get(vehicle_id, "Unknown / Not in onboarded list")
-            if model_name not in model_vehicle_ids:
-                model_vehicle_ids[model_name] = set()
-            model_vehicle_ids[model_name].add(vehicle_id)
+            details = vehicle_details_map.get(vehicle_id, {})
+            model_name = details.get("model", "Unknown / Not in onboarded list")
+            variant_name = details.get("variant", "Unknown")
+            key = (model_name, variant_name)
+            if key not in model_variant_vehicle_ids:
+                model_variant_vehicle_ids[key] = set()
+            model_variant_vehicle_ids[key].add(vehicle_id)
 
-        for model_name, ids in model_vehicle_ids.items():
+        for (model_name, variant_name), ids in model_variant_vehicle_ids.items():
             sorted_ids = sorted(ids)
             utc_dt = datetime(year, month, day, hour)
             ist_dt = utc_dt + timedelta(hours=5, minutes=30)
@@ -488,15 +498,16 @@ def fetch_processed_model_vehicleids_for_day(
                     "ist_day": ist_dt.day,
                     "ist_hour": ist_dt.hour,
                     "model": model_name,
+                    "variant": variant_name,
                     "vehicle_count": len(sorted_ids),
                     "vehicle_ids": ", ".join(sorted_ids),
                 }
             )
 
     if not rows:
-        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "vehicle_count", "vehicle_ids"])
+        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "variant", "vehicle_count", "vehicle_ids"])
 
-    return pd.DataFrame(rows).sort_values(["ist_day", "ist_hour", "vehicle_count", "model"], ascending=[True, True, False, True]).reset_index(drop=True)
+    return pd.DataFrame(rows).sort_values(["ist_day", "ist_hour", "vehicle_count", "model", "variant"], ascending=[True, True, False, True, True]).reset_index(drop=True)
 
 
 with st.sidebar:
@@ -731,6 +742,7 @@ if "total_vehicles_onboarded" not in st.session_state:
         st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
         st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
         st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
+        st.session_state["onboarded_vehicle_details_map"] = onboarded_summary.get("vehicle_details_map", {})
         st.session_state["onboarded_presence_df"] = fetch_onboarded_model_presence_for_month(
             sas_url,
             container_name,
@@ -787,6 +799,7 @@ if st.button("Refresh Data", use_container_width=False):
             st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
             st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
             st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
+            st.session_state["onboarded_vehicle_details_map"] = onboarded_summary.get("vehicle_details_map", {})
             recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=24)
             presence_updates = fetch_onboarded_model_presence_for_days(
                 sas_url,
@@ -849,19 +862,20 @@ with tab_cols[0]:
     if st.button("📊 Daily Drill-down", use_container_width=True, key="tab_drill_down"):
         st.session_state["active_tab"] = 0
 with tab_cols[1]:
-    if st.button("🔥 Heatmap", use_container_width=True, key="tab_heatmap"):
+    if st.button("🔥 Vehicles Live/Hour Heatmap", use_container_width=True, key="tab_heatmap"):
         st.session_state["active_tab"] = 1
 with tab_cols[2]:
-    if st.button("✅ Vehicles Processed", use_container_width=True, key="tab_processed"):
+    if st.button("✅ Vehicles Result Processed", use_container_width=True, key="tab_processed"):
         st.session_state["active_tab"] = 2
 with tab_cols[3]:
-    if st.button("🧭 Onboarded Drill-down", use_container_width=True, key="tab_onboarded"):
+    if st.button("🧭 Onboarded Vehicles Drill Down", use_container_width=True, key="tab_onboarded"):
         st.session_state["active_tab"] = 3
 
 st.divider()
 
 # Tab 0: Daily Drill-down
 if st.session_state["active_tab"] == 0:
+    st.caption("Shows hourly live vehicle count trend for a selected IST day based on raw-data partitions.")
     l, m, r = st.columns([0.15, 0.6, 0.25])
     with l:
         st.markdown("**Day**")
@@ -907,6 +921,7 @@ if st.session_state["active_tab"] == 0:
 
 # Tab 1: Heatmap
 if st.session_state["active_tab"] == 1:
+    st.caption("Shows daily vs hourly (IST) density of live vehicles; warmer cells indicate higher live vehicle counts.")
     pivot = df_results_ist.pivot_table(
         index="ist_day",
         columns="ist_hour",
@@ -932,7 +947,7 @@ if st.session_state["active_tab"] == 1:
         )
     )
     fig_heat.update_layout(
-        title=f"Vehicle Count Heatmap - {int(year)}-{int(month):02d} (IST)",
+        title=f"Vehicles Live/Hour Heatmap - {int(year)}-{int(month):02d} (IST)",
         xaxis_title="Hour of Day (IST)",
         yaxis_title="Day",
         template="plotly_white",
@@ -944,6 +959,7 @@ if st.session_state["active_tab"] == 1:
 
 # Tab 2: Vehicles Processed
 if st.session_state["active_tab"] == 2:
+    st.caption("Shows how many unique vehicle folders were processed in result-data each day.")
     df_processed = st.session_state.get("df_processed", pd.DataFrame())
     
     if df_processed.empty:
@@ -976,7 +992,7 @@ if st.session_state["active_tab"] == 2:
 
         st.divider()
         st.markdown("**Processed Vehicle IDs by Model and Hour**")
-        st.caption("Uses result-data vehicle IDs and vehicle registry model mapping from Onboarded Drill-down.")
+        st.caption("Shows per-hour processed vehicle counts by model and variant in IST, mapped using vehicle registry data.")
 
         available_processed_days = sorted(df_processed_sorted["day"].unique())
         selected_processed_day = st.selectbox(
@@ -986,22 +1002,27 @@ if st.session_state["active_tab"] == 2:
             key="processed_breakdown_day_input",
         )
 
-        onboarded_vehicle_model_map = st.session_state.get("onboarded_vehicle_model_map", {})
+        onboarded_vehicle_details_map = st.session_state.get("onboarded_vehicle_details_map", {})
         hourly_model_df = fetch_processed_model_vehicleids_for_day(
             sas_url,
             container_name,
             int(year),
             int(month),
             int(selected_processed_day),
-            onboarded_vehicle_model_map,
+            onboarded_vehicle_details_map,
         )
 
         if hourly_model_df.empty:
             st.info("No processed vehicle IDs found for the selected day.")
         else:
+            hourly_model_totals = (
+                hourly_model_df.groupby(["ist_hour", "model"], as_index=False)["vehicle_count"]
+                .sum()
+                .sort_values(["ist_hour", "model"])
+            )
             fig_hourly_breakdown = go.Figure()
-            for model_name in sorted(hourly_model_df["model"].unique()):
-                model_rows = hourly_model_df[hourly_model_df["model"] == model_name].copy()
+            for model_name in sorted(hourly_model_totals["model"].unique()):
+                model_rows = hourly_model_totals[hourly_model_totals["model"] == model_name].copy()
                 model_rows["ist_hour_label"] = model_rows["ist_hour"].map(lambda h: f"{int(h):02d}:00")
                 fig_hourly_breakdown.add_trace(
                     go.Bar(
@@ -1030,15 +1051,17 @@ if st.session_state["active_tab"] == 2:
                     "ist_day": "IST Day",
                     "ist_hour": "IST Hour",
                     "model": "Model",
+                    "variant": "Variant",
                     "vehicle_count": "Vehicle ID Count",
                     "vehicle_ids": "Vehicle IDs",
                 }
             )
-            display_df = display_df[["IST Day", "IST Hour", "Model", "Vehicle ID Count", "Vehicle IDs"]]
+            display_df = display_df[["IST Day", "IST Hour", "Model", "Variant", "Vehicle ID Count", "Vehicle IDs"]]
             st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 # Tab 3: Onboarded Drill-down
 if st.session_state["active_tab"] == 3:
+    st.caption("Shows onboarded fleet composition and daily raw-data upload presence using vehicle registry mapping.")
     model_df = st.session_state.get("onboarded_model_counts", pd.DataFrame())
     variant_df = st.session_state.get("onboarded_variant_counts", pd.DataFrame())
     presence_df = st.session_state.get("onboarded_presence_df", pd.DataFrame())
@@ -1059,6 +1082,7 @@ if st.session_state["active_tab"] == 3:
             if model_df.empty:
                 st.info("No model-level onboarded data available.")
             else:
+                st.caption("Distribution of total onboarded vehicles by model.")
                 fig_model = go.Figure()
                 fig_model.add_trace(
                     go.Bar(
@@ -1086,6 +1110,7 @@ if st.session_state["active_tab"] == 3:
             if variant_df.empty:
                 st.info("No variant-level onboarded data available.")
             else:
+                st.caption("Top 25 onboarded model-variant combinations by vehicle count.")
                 variant_display = variant_df.head(25).copy()
                 fig_variant = go.Figure()
                 fig_variant.add_trace(
@@ -1116,6 +1141,35 @@ if st.session_state["active_tab"] == 3:
         if presence_df.empty:
             st.info("No onboarded vehicle IDs were found in raw-data sub-partitions for the selected month.")
         else:
+            daily_presence_totals = (
+                presence_df.groupby("day", as_index=False)["count"]
+                .sum()
+                .sort_values("day")
+            )
+            st.caption("Line graph: total onboarded vehicles that uploaded raw data at least once on each day.")
+            fig_presence_line = go.Figure()
+            fig_presence_line.add_trace(
+                go.Scatter(
+                    x=daily_presence_totals["day"],
+                    y=daily_presence_totals["count"],
+                    mode="lines+markers",
+                    line={"color": "#2563eb", "width": 3},
+                    marker={"size": 7},
+                    hovertemplate="<b>Day:</b> %{x}<br><b>Vehicles Uploaded At Least Once:</b> %{y}<extra></extra>",
+                )
+            )
+            fig_presence_line.update_layout(
+                title="Daily Uploaded Vehicles (At Least Once)",
+                xaxis_title="Day",
+                yaxis_title="Unique Onboarded Vehicle IDs",
+                template="plotly_white",
+                autosize=True,
+                showlegend=False,
+                xaxis={"tickmode": "linear", "tick0": 1, "dtick": 1},
+                margin={"l": 50, "r": 40, "t": 50, "b": 50},
+            )
+            st.plotly_chart(fig_presence_line, use_container_width=True)
+
             available_presence_days = sorted(presence_df["day"].unique())
             selected_presence_day = st.selectbox(
                 "Select Day for Onboarded Presence",
@@ -1127,6 +1181,7 @@ if st.session_state["active_tab"] == 3:
             day_presence = presence_df[presence_df["day"] == selected_presence_day].copy()
             day_presence = day_presence.sort_values("count", ascending=False)
 
+            st.caption("Bar chart: model-wise onboarded vehicle IDs that uploaded at least once on selected day.")
             fig_presence = go.Figure()
             fig_presence.add_trace(
                 go.Bar(
