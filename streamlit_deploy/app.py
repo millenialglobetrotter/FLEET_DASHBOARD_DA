@@ -756,6 +756,33 @@ if stored_key != current_key or "df_results" not in st.session_state:
             st.error(f"Unable to load data: {exc}")
             st.stop()
 
+# Always bootstrap recent data once per session/key for current month,
+# so first open reflects latest processed/raw partitions without manual refresh.
+recent_bootstrap_key = f"{container_name}|{int(year)}-{int(month):02d}"
+if st.session_state.get("recent_data_bootstrap_key") != recent_bootstrap_key:
+    try:
+        now = datetime.now()
+        if (int(year), int(month)) == (now.year, now.month):
+            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=48)
+            recent_processed = fetch_recent_processed_days(
+                sas_url,
+                container_name,
+                int(year),
+                int(month),
+                lookback_hours=48,
+            )
+            st.session_state["df_results"] = merge_hourly_data(
+                st.session_state.get("df_results", pd.DataFrame()),
+                recent_df,
+            )
+            st.session_state["df_processed"] = merge_daily_data(
+                st.session_state.get("df_processed", pd.DataFrame()),
+                recent_processed,
+            )
+        st.session_state["recent_data_bootstrap_key"] = recent_bootstrap_key
+    except Exception as exc:
+        st.error(f"Unable to load recent data on startup: {exc}")
+
 if "total_vehicles_onboarded" not in st.session_state:
     try:
         onboarded_summary = fetch_onboarded_vehicle_summary(make_filter="SML")
