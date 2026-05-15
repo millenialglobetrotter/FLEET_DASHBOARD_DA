@@ -452,11 +452,11 @@ def fetch_processed_model_vehicleids_for_day(
     vehicle_model_map: dict[str, str],
 ) -> pd.DataFrame:
     if not sas_url or not container_name or day < 1:
-        return pd.DataFrame(columns=["hour", "model", "vehicle_count", "vehicle_ids"])
+        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "vehicle_count", "vehicle_ids"])
 
     now = datetime.now()
     if (year, month, day) > (now.year, now.month, now.day):
-        return pd.DataFrame(columns=["hour", "model", "vehicle_count", "vehicle_ids"])
+        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "vehicle_count", "vehicle_ids"])
 
     end_hour = now.hour if (year, month, day) == (now.year, now.month, now.day) else 23
     container_client = ContainerClient.from_container_url(sas_url)
@@ -479,9 +479,14 @@ def fetch_processed_model_vehicleids_for_day(
 
         for model_name, ids in model_vehicle_ids.items():
             sorted_ids = sorted(ids)
+            utc_dt = datetime(year, month, day, hour)
+            ist_dt = utc_dt + timedelta(hours=5, minutes=30)
             rows.append(
                 {
+                    "day": day,
                     "hour": hour,
+                    "ist_day": ist_dt.day,
+                    "ist_hour": ist_dt.hour,
                     "model": model_name,
                     "vehicle_count": len(sorted_ids),
                     "vehicle_ids": ", ".join(sorted_ids),
@@ -489,9 +494,9 @@ def fetch_processed_model_vehicleids_for_day(
             )
 
     if not rows:
-        return pd.DataFrame(columns=["hour", "model", "vehicle_count", "vehicle_ids"])
+        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "vehicle_count", "vehicle_ids"])
 
-    return pd.DataFrame(rows).sort_values(["hour", "vehicle_count", "model"], ascending=[True, False, True]).reset_index(drop=True)
+    return pd.DataFrame(rows).sort_values(["ist_day", "ist_hour", "vehicle_count", "model"], ascending=[True, True, False, True]).reset_index(drop=True)
 
 
 with st.sidebar:
@@ -994,44 +999,42 @@ if st.session_state["active_tab"] == 2:
         if hourly_model_df.empty:
             st.info("No processed vehicle IDs found for the selected day.")
         else:
-            hourly_totals = (
-                hourly_model_df.groupby("hour", as_index=False)["vehicle_count"]
-                .sum()
-                .sort_values("hour")
-            )
             fig_hourly_breakdown = go.Figure()
-            fig_hourly_breakdown.add_trace(
-                go.Bar(
-                    x=hourly_totals["hour"],
-                    y=hourly_totals["vehicle_count"],
-                    marker={"color": "#2e8b57"},
-                    text=hourly_totals["vehicle_count"],
-                    textposition="outside",
-                    hovertemplate="<b>Hour:</b> %{x}:00<br><b>Processed Vehicle IDs:</b> %{y}<extra></extra>",
+            for model_name in sorted(hourly_model_df["model"].unique()):
+                model_rows = hourly_model_df[hourly_model_df["model"] == model_name].copy()
+                model_rows["ist_hour_label"] = model_rows["ist_hour"].map(lambda h: f"{int(h):02d}:00")
+                fig_hourly_breakdown.add_trace(
+                    go.Bar(
+                        x=model_rows["ist_hour_label"],
+                        y=model_rows["vehicle_count"],
+                        name=str(model_name),
+                        hovertemplate="<b>IST Hour:</b> %{x}<br><b>Model:</b> %{fullData.name}<br><b>Processed Vehicle IDs:</b> %{y}<extra></extra>",
+                    )
                 )
-            )
             fig_hourly_breakdown.update_layout(
-                title=f"Processed Vehicle IDs by Hour - Day {int(selected_processed_day)}",
-                xaxis_title="Hour of Day",
+                title=f"Processed Vehicle IDs by Model and Hour (IST) - Day {int(selected_processed_day)}",
+                xaxis_title="Hour of Day (IST)",
                 yaxis_title="Processed Vehicle IDs",
                 template="plotly_white",
                 autosize=True,
-                showlegend=False,
-                xaxis={"tickmode": "linear", "tick0": 0, "dtick": 1},
+                barmode="group",
+                xaxis={"categoryorder": "array", "categoryarray": [f"{h:02d}:00" for h in range(24)]},
                 margin={"l": 50, "r": 40, "t": 50, "b": 50},
             )
             st.plotly_chart(fig_hourly_breakdown, use_container_width=True)
 
             display_df = hourly_model_df.copy()
-            display_df["hour"] = display_df["hour"].map(lambda h: f"{int(h):02d}:00")
+            display_df["ist_hour"] = display_df["ist_hour"].map(lambda h: f"{int(h):02d}:00")
             display_df = display_df.rename(
                 columns={
-                    "hour": "Hour",
+                    "ist_day": "IST Day",
+                    "ist_hour": "IST Hour",
                     "model": "Model",
                     "vehicle_count": "Vehicle ID Count",
                     "vehicle_ids": "Vehicle IDs",
                 }
             )
+            display_df = display_df[["IST Day", "IST Hour", "Model", "Vehicle ID Count", "Vehicle IDs"]]
             st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 # Tab 3: Onboarded Drill-down
