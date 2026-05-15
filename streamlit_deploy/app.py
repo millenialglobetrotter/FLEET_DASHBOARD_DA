@@ -514,6 +514,20 @@ def fetch_onboarded_model_presence_for_month(
     )
 
 
+def _normalize_vehicle_id(value: str) -> str:
+    return "".join(ch for ch in str(value).upper().strip() if ch.isalnum())
+
+
+def _extract_vehicle_id_from_suffix(suffix: str) -> str:
+    if not suffix:
+        return ""
+
+    first_segment = suffix.split("/", 1)[0].split("?", 1)[0].strip()
+    if first_segment.lower().endswith(".json"):
+        first_segment = first_segment[:-5]
+    return first_segment.strip()
+
+
 @st.cache_data(show_spinner=False)
 def fetch_onboarded_vehicle_hours_for_month(
     sas_url: str,
@@ -537,6 +551,10 @@ def fetch_onboarded_vehicle_hours_for_month(
 
     container_client = ContainerClient.from_container_url(sas_url)
     vehicle_day_hours: dict[str, set[tuple[int, int]]] = {}
+    normalized_lookup: dict[str, str] = {
+        _normalize_vehicle_id(vehicle_id): vehicle_id
+        for vehicle_id in vehicle_details_map
+    }
 
     for day in range(1, last_day + 1):
         end_hour = now.hour if (year == now.year and month == now.month and day == now.day) else 23
@@ -546,12 +564,18 @@ def fetch_onboarded_vehicle_hours_for_month(
 
             for blob in container_client.list_blobs(name_starts_with=hour_path):
                 suffix = blob.name[len(hour_path):]
-                if "/" not in suffix:
+                vehicle_id = _extract_vehicle_id_from_suffix(suffix)
+                if not vehicle_id:
                     continue
 
-                vehicle_id = suffix.split("/", 1)[0]
                 if vehicle_id in vehicle_details_map:
                     seen_this_hour.add(vehicle_id)
+                    continue
+
+                normalized_id = _normalize_vehicle_id(vehicle_id)
+                canonical_vehicle_id = normalized_lookup.get(normalized_id)
+                if canonical_vehicle_id:
+                    seen_this_hour.add(canonical_vehicle_id)
 
             for vehicle_id in seen_this_hour:
                 if vehicle_id not in vehicle_day_hours:
@@ -939,6 +963,24 @@ if st.session_state.get("onboarded_presence_bootstrap_key") != onboarded_auto_re
         )
         st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state["onboarded_presence_bootstrap_key"] = onboarded_auto_refresh_key
+    except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+        st.session_state["onboarded_error"] = str(exc)
+
+if (
+    "onboarded_vehicle_hours_df" not in st.session_state
+    or (
+        st.session_state.get("onboarded_vehicle_hours_df", pd.DataFrame()).empty
+        and st.session_state.get("onboarded_vehicle_details_map")
+    )
+):
+    try:
+        st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            st.session_state.get("onboarded_vehicle_details_map", {}),
+        )
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
         st.session_state["onboarded_error"] = str(exc)
 
