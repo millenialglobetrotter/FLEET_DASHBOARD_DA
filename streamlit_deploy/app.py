@@ -450,6 +450,7 @@ def merge_model_daily_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.
     return base.reset_index().sort_values(keys).reset_index(drop=True)
 
 
+@st.cache_data(show_spinner=False)
 def fetch_processed_model_vehicleids_for_day(
     sas_url: str,
     container_name: str,
@@ -480,8 +481,9 @@ def fetch_processed_model_vehicleids_for_day(
 
             vehicle_id = suffix.split("/", 1)[0]
             details = vehicle_details_map.get(vehicle_id, {})
-            model_name = details.get("model", "Unknown / Not in onboarded list")
-            variant_name = details.get("variant", "Unknown")
+
+            model_name = details.get("model", "Unknown") or "Unknown"
+            variant_name = details.get("variant", "Unknown") or "Unknown"
             key = (model_name, variant_name)
             if key not in model_variant_vehicle_ids:
                 model_variant_vehicle_ids[key] = set()
@@ -1003,14 +1005,15 @@ if st.session_state["active_tab"] == 2:
         )
 
         onboarded_vehicle_details_map = st.session_state.get("onboarded_vehicle_details_map", {})
-        hourly_model_df = fetch_processed_model_vehicleids_for_day(
-            sas_url,
-            container_name,
-            int(year),
-            int(month),
-            int(selected_processed_day),
-            onboarded_vehicle_details_map,
-        )
+        with st.spinner("Loading processed model/hour breakdown..."):
+            hourly_model_df = fetch_processed_model_vehicleids_for_day(
+                sas_url,
+                container_name,
+                int(year),
+                int(month),
+                int(selected_processed_day),
+                onboarded_vehicle_details_map,
+            )
 
         if hourly_model_df.empty:
             st.info("No processed vehicle IDs found for the selected day.")
