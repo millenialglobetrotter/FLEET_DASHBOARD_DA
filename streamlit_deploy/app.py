@@ -443,6 +443,57 @@ def merge_model_daily_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.
     return base.reset_index().sort_values(keys).reset_index(drop=True)
 
 
+def fetch_processed_model_vehicleids_for_day(
+    sas_url: str,
+    container_name: str,
+    year: int,
+    month: int,
+    day: int,
+    vehicle_model_map: dict[str, str],
+) -> pd.DataFrame:
+    if not sas_url or not container_name or day < 1:
+        return pd.DataFrame(columns=["hour", "model", "vehicle_count", "vehicle_ids"])
+
+    now = datetime.now()
+    if (year, month, day) > (now.year, now.month, now.day):
+        return pd.DataFrame(columns=["hour", "model", "vehicle_count", "vehicle_ids"])
+
+    end_hour = now.hour if (year, month, day) == (now.year, now.month, now.day) else 23
+    container_client = ContainerClient.from_container_url(sas_url)
+    rows = []
+
+    for hour in range(end_hour + 1):
+        hour_path = f"result-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
+        model_vehicle_ids: dict[str, set[str]] = {}
+
+        for blob in container_client.list_blobs(name_starts_with=hour_path):
+            suffix = blob.name[len(hour_path):]
+            if "/" not in suffix:
+                continue
+
+            vehicle_id = suffix.split("/", 1)[0]
+            model_name = vehicle_model_map.get(vehicle_id, "Unknown / Not in onboarded list")
+            if model_name not in model_vehicle_ids:
+                model_vehicle_ids[model_name] = set()
+            model_vehicle_ids[model_name].add(vehicle_id)
+
+        for model_name, ids in model_vehicle_ids.items():
+            sorted_ids = sorted(ids)
+            rows.append(
+                {
+                    "hour": hour,
+                    "model": model_name,
+                    "vehicle_count": len(sorted_ids),
+                    "vehicle_ids": ", ".join(sorted_ids),
+                }
+            )
+
+    if not rows:
+        return pd.DataFrame(columns=["hour", "model", "vehicle_count", "vehicle_ids"])
+
+    return pd.DataFrame(rows).sort_values(["hour", "vehicle_count", "model"], ascending=[True, False, True]).reset_index(drop=True)
+
+
 with st.sidebar:
     st.header("Settings")
 
@@ -917,6 +968,71 @@ if st.session_state["active_tab"] == 2:
             margin={"l": 50, "r": 40, "t": 50, "b": 50},
         )
         st.plotly_chart(fig_processed, use_container_width=True)
+
+        st.divider()
+        st.markdown("**Processed Vehicle IDs by Model and Hour**")
+        st.caption("Uses result-data vehicle IDs and vehicle registry model mapping from Onboarded Drill-down.")
+
+        available_processed_days = sorted(df_processed_sorted["day"].unique())
+        selected_processed_day = st.selectbox(
+            "Select Day for Hourly Processed Breakdown",
+            options=available_processed_days,
+            format_func=lambda x: f"Day {int(x)}",
+            key="processed_breakdown_day_input",
+        )
+
+        onboarded_vehicle_model_map = st.session_state.get("onboarded_vehicle_model_map", {})
+        hourly_model_df = fetch_processed_model_vehicleids_for_day(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            int(selected_processed_day),
+            onboarded_vehicle_model_map,
+        )
+
+        if hourly_model_df.empty:
+            st.info("No processed vehicle IDs found for the selected day.")
+        else:
+            hourly_totals = (
+                hourly_model_df.groupby("hour", as_index=False)["vehicle_count"]
+                .sum()
+                .sort_values("hour")
+            )
+            fig_hourly_breakdown = go.Figure()
+            fig_hourly_breakdown.add_trace(
+                go.Bar(
+                    x=hourly_totals["hour"],
+                    y=hourly_totals["vehicle_count"],
+                    marker={"color": "#2e8b57"},
+                    text=hourly_totals["vehicle_count"],
+                    textposition="outside",
+                    hovertemplate="<b>Hour:</b> %{x}:00<br><b>Processed Vehicle IDs:</b> %{y}<extra></extra>",
+                )
+            )
+            fig_hourly_breakdown.update_layout(
+                title=f"Processed Vehicle IDs by Hour - Day {int(selected_processed_day)}",
+                xaxis_title="Hour of Day",
+                yaxis_title="Processed Vehicle IDs",
+                template="plotly_white",
+                autosize=True,
+                showlegend=False,
+                xaxis={"tickmode": "linear", "tick0": 0, "dtick": 1},
+                margin={"l": 50, "r": 40, "t": 50, "b": 50},
+            )
+            st.plotly_chart(fig_hourly_breakdown, use_container_width=True)
+
+            display_df = hourly_model_df.copy()
+            display_df["hour"] = display_df["hour"].map(lambda h: f"{int(h):02d}:00")
+            display_df = display_df.rename(
+                columns={
+                    "hour": "Hour",
+                    "model": "Model",
+                    "vehicle_count": "Vehicle ID Count",
+                    "vehicle_ids": "Vehicle IDs",
+                }
+            )
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 # Tab 3: Onboarded Drill-down
 if st.session_state["active_tab"] == 3:
