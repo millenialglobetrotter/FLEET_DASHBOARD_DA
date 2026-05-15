@@ -687,6 +687,27 @@ if "total_vehicles_onboarded" not in st.session_state:
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
         st.session_state["onboarded_error"] = str(exc)
 
+# Auto-refresh onboarding drill-down with recent data once per month/session,
+# so newly arrived day data appears even before manual refresh.
+onboarded_auto_refresh_key = f"{int(year)}-{int(month):02d}"
+if st.session_state.get("onboarded_presence_bootstrap_key") != onboarded_auto_refresh_key:
+    try:
+        recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=24)
+        presence_updates = fetch_onboarded_model_presence_for_days(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            st.session_state.get("onboarded_vehicle_model_map", {}),
+            recent_days,
+        )
+        existing_presence = st.session_state.get("onboarded_presence_df", pd.DataFrame())
+        st.session_state["onboarded_presence_df"] = merge_model_daily_data(existing_presence, presence_updates)
+        st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state["onboarded_presence_bootstrap_key"] = onboarded_auto_refresh_key
+    except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+        st.session_state["onboarded_error"] = str(exc)
+
 if st.button("Refresh Data", use_container_width=False):
     with st.spinner("Refreshing recent hours..."):
         try:
