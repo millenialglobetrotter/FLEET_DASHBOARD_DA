@@ -1,5 +1,6 @@
 import calendar
 from datetime import datetime, timedelta
+import io
 import json
 import os
 from pathlib import Path
@@ -252,12 +253,84 @@ def _cache_paths(container_name: str, year: int, month: int):
     return raw_path, processed_path, meta_path
 
 
+def _gist_credentials() -> tuple[str, str]:
+    """Return (gist_id, github_token) from secrets or config, empty strings if not configured."""
+    cfg = _load_local_config().get("github_gist", {})
+    gist_id = _get_secret_value("github_gist", "GITHUB_GIST_ID", cfg.get("gist_id", ""))
+    token = _get_secret_value("github_gist", "GITHUB_GIST_TOKEN", cfg.get("token", ""))
+    return gist_id.strip(), token.strip()
+
+
+def _gist_read_file(gist_id: str, token: str, filename: str) -> str | None:
+    """Fetch a single file's content from a GitHub Gist. Returns None on any failure."""
+    try:
+        response = _http_json(
+            f"https://api.github.com/gists/{gist_id}",
+            headers={"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"},
+            timeout=15,
+        )
+        file_info = response.get("files", {}).get(filename)
+        if not file_info:
+            return None
+        # For files >1 MB GitHub truncates content and provides raw_url instead.
+        if file_info.get("truncated"):
+            raw_url = file_info.get("raw_url", "")
+            if not raw_url:
+                return None
+            req = urlrequest.Request(raw_url, headers={"Authorization": f"Bearer {token}"})
+            with urlrequest.urlopen(req, timeout=20) as resp:
+                return resp.read().decode("utf-8")
+        return file_info.get("content")
+    except Exception:
+        return None
+
+
+def _gist_save_files(gist_id: str, token: str, files: dict[str, str]) -> bool:
+    """PATCH a GitHub Gist with the given {filename: content} dict. Returns True on success."""
+    try:
+        payload = {"files": {name: {"content": content} for name, content in files.items()}}
+        _http_json(
+            f"https://api.github.com/gists/{gist_id}",
+            method="PATCH",
+            headers={"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"},
+            payload=payload,
+            timeout=20,
+        )
+        return True
+    except Exception:
+        return False
+
+
 def load_cached_datasets(container_name: str, year: int, month: int):
-    raw_path, processed_path, meta_path = _cache_paths(container_name, year, month)
+    key = _safe_cache_key(container_name, year, month)
     raw_df = pd.DataFrame()
     processed_df = pd.DataFrame()
     cached_at = None
 
+    gist_id, gist_token = _gist_credentials()
+    if gist_id and gist_token:
+        raw_content = _gist_read_file(gist_id, gist_token, f"raw_{key}.csv")
+        processed_content = _gist_read_file(gist_id, gist_token, f"processed_{key}.csv")
+        meta_content = _gist_read_file(gist_id, gist_token, f"meta_{key}.json")
+        if raw_content:
+            try:
+                raw_df = pd.read_csv(io.StringIO(raw_content))
+            except Exception:
+                raw_df = pd.DataFrame()
+        if processed_content:
+            try:
+                processed_df = pd.read_csv(io.StringIO(processed_content))
+            except Exception:
+                processed_df = pd.DataFrame()
+        if meta_content:
+            try:
+                cached_at = json.loads(meta_content).get("cached_at")
+            except Exception:
+                cached_at = None
+        return raw_df, processed_df, cached_at
+
+    # Fallback: local file cache
+    raw_path, processed_path, meta_path = _cache_paths(container_name, year, month)
     if raw_path.exists():
         raw_df = pd.read_csv(raw_path)
     if processed_path.exists():
@@ -265,23 +338,32 @@ def load_cached_datasets(container_name: str, year: int, month: int):
     if meta_path.exists():
         try:
             with open(meta_path, "r", encoding="utf-8") as meta_file:
-                meta = json.load(meta_file)
-                cached_at = meta.get("cached_at")
+                cached_at = json.load(meta_file).get("cached_at")
         except (OSError, json.JSONDecodeError):
             cached_at = None
-
     return raw_df, processed_df, cached_at
 
 
 def save_cached_datasets(container_name: str, year: int, month: int, raw_df: pd.DataFrame, processed_df: pd.DataFrame):
+    key = _safe_cache_key(container_name, year, month)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    gist_id, gist_token = _gist_credentials()
+    if gist_id and gist_token:
+        _gist_save_files(gist_id, gist_token, {
+            f"raw_{key}.csv": raw_df.to_csv(index=False),
+            f"processed_{key}.csv": processed_df.to_csv(index=False),
+            f"meta_{key}.json": json.dumps({"cached_at": now_str}),
+        })
+        return
+
+    # Fallback: local file cache
     raw_path, processed_path, meta_path = _cache_paths(container_name, year, month)
     os.makedirs(CACHE_DIR, exist_ok=True)
-
     raw_df.to_csv(raw_path, index=False)
     processed_df.to_csv(processed_path, index=False)
-
     with open(meta_path, "w", encoding="utf-8") as meta_file:
-        json.dump({"cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, meta_file)
+        json.dump({"cached_at": now_str}, meta_file)
 
 
 def is_cache_stale(cached_at: str, max_age_minutes: int = 15) -> bool:

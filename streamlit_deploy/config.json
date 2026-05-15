@@ -8,5 +8,9 @@
   "vehicle_registry": {
     "base_url": "https://ncvocj.condense.zeliot.in/vehicle-da-mgmt",
     "endpoint": "/api/customers"
+  },
+  "github_gist": {
+    "gist_id": "",
+    "token": ""
   }
 }
