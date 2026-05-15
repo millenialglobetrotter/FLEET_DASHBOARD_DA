@@ -447,7 +447,6 @@ def merge_model_daily_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.
     return base.reset_index().sort_values(keys).reset_index(drop=True)
 
 
-@st.cache_data(show_spinner=False)
 def fetch_processed_model_vehicleids_for_day(
     sas_url: str,
     container_name: str,
@@ -466,6 +465,10 @@ def fetch_processed_model_vehicleids_for_day(
     end_hour = now.hour if (year, month, day) == (now.year, now.month, now.day) else 23
     container_client = ContainerClient.from_container_url(sas_url)
     rows = []
+    normalized_lookup: dict[str, str] = {
+        _normalize_vehicle_id(vehicle_id): vehicle_id
+        for vehicle_id in vehicle_details_map
+    }
 
     for hour in range(end_hour + 1):
         hour_path = f"result-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
@@ -473,10 +476,14 @@ def fetch_processed_model_vehicleids_for_day(
 
         for blob in container_client.list_blobs(name_starts_with=hour_path):
             suffix = blob.name[len(hour_path):]
-            if "/" not in suffix:
+            vehicle_id = _extract_vehicle_id_from_suffix(suffix)
+            if not vehicle_id:
                 continue
 
-            vehicle_id = suffix.split("/", 1)[0]
+            if vehicle_id not in vehicle_details_map:
+                normalized_id = _normalize_vehicle_id(vehicle_id)
+                vehicle_id = normalized_lookup.get(normalized_id, vehicle_id)
+
             details = vehicle_details_map.get(vehicle_id, {})
 
             model_name = details.get("model", "Unknown") or "Unknown"
@@ -708,24 +715,26 @@ if stored_key != current_key or "df_results" not in st.session_state:
                 st.session_state["cache_loaded_at"] = cached_at
 
                 now = datetime.now()
-                # If cache is old for current month, one viewer updates and saves for everyone.
-                if (int(year), int(month)) == (now.year, now.month) and is_cache_stale(cached_at, max_age_minutes=15):
-                    recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
+                # For current month, always merge recent hours so today's data appears on open.
+                if (int(year), int(month)) == (now.year, now.month):
+                    recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=48)
                     recent_processed = fetch_recent_processed_days(
-                        sas_url, container_name, int(year), int(month), lookback_hours=24
+                        sas_url, container_name, int(year), int(month), lookback_hours=48
                     )
                     st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
                     st.session_state["df_processed"] = merge_daily_data(
                         st.session_state["df_processed"], recent_processed
                     )
-                    save_cached_datasets(
-                        container_name,
-                        int(year),
-                        int(month),
-                        st.session_state["df_results"],
-                        st.session_state["df_processed"],
-                    )
-                    st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # Persist if cache is stale, to keep shared cache fresh for all users.
+                    if is_cache_stale(cached_at, max_age_minutes=15):
+                        save_cached_datasets(
+                            container_name,
+                            int(year),
+                            int(month),
+                            st.session_state["df_results"],
+                            st.session_state["df_processed"],
+                        )
+                        st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             else:
                 st.session_state["df_results"] = count_vehicles_per_hour_for_month(
                     sas_url, container_name, int(year), int(month)
@@ -823,9 +832,9 @@ if (
 if st.button("Refresh Data", use_container_width=False):
     with st.spinner("Refreshing recent hours..."):
         try:
-            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
+            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=48)
             recent_processed = fetch_recent_processed_days(
-                sas_url, container_name, int(year), int(month), lookback_hours=24
+                sas_url, container_name, int(year), int(month), lookback_hours=48
             )
             st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
             st.session_state["df_processed"] = merge_daily_data(st.session_state["df_processed"], recent_processed)
@@ -902,6 +911,11 @@ df_results_ist["ist_hour"] = ((df_results_ist["hour"] + 5.5) % 24).astype(int)
 df_results_ist["ist_day"] = df_results_ist["day"] + ((df_results_ist["hour"] + 5.5) // 24).astype(int)
 
 available_days = sorted(df_results_ist["ist_day"].unique())
+now_ist = datetime.now() + timedelta(hours=5, minutes=30)
+if (int(year), int(month)) == (now_ist.year, now_ist.month):
+    if now_ist.day not in available_days:
+        available_days.append(now_ist.day)
+        available_days = sorted(available_days)
 
 # Initialize active tab in session state
 if "active_tab" not in st.session_state:
