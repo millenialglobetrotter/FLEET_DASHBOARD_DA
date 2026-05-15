@@ -1,3 +1,5 @@
+"""Fleet Level Dashboard - Main application entry point and orchestration."""
+
 import calendar
 from datetime import datetime, timedelta
 import io
@@ -5,12 +7,25 @@ import json
 import os
 from pathlib import Path
 from urllib import error as urlerror
-from urllib import request as urlrequest
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from azure.storage.blob import ContainerClient
+
+# Import refactored modules
+from utils import (
+    secret_or_default,
+    get_secret_value,
+    load_local_config,
+    first_non_empty,
+)
+from data_fetchers import (
+    fetch_onboarded_vehicle_summary,
+    fetch_onboarded_vehicle_hours_for_month,
+    fetch_onboarded_model_presence_for_month,
+    _fetch_model_presence_for_days,
+)
 
 st.set_page_config(
     page_title="Fleet Level Dashboard",
@@ -40,202 +55,9 @@ st.caption("Vehicle count analytics across hourly partitions (IST)")
 CACHE_DIR = Path("streamlit_deploy") / "data_cache"
 
 
-def _secret_or_default(key: str, default_value):
-    if key in st.secrets:
-        return st.secrets[key]
-
-    # Optional nested secrets support, e.g. [azure] sas_url = "..."
-    if "azure" in st.secrets and key.lower() in st.secrets["azure"]:
-        return st.secrets["azure"][key.lower()]
-
-    return default_value
-
-
-def _get_secret_value(section: str, key: str, default_value: str = "") -> str:
-    if key in st.secrets:
-        return str(st.secrets[key])
-
-    if section in st.secrets and key.lower() in st.secrets[section]:
-        return str(st.secrets[section][key.lower()])
-
-    return default_value
-
-
-def _load_local_config() -> dict:
-    candidate_paths = ["config.json", str(Path(__file__).with_name("config.json"))]
-    for path in candidate_paths:
-        try:
-            with open(path, "r", encoding="utf-8") as handle:
-                return json.load(handle)
-        except (OSError, json.JSONDecodeError):
-            continue
-    return {}
-
-
-def _join_url(base_url: str, endpoint: str) -> str:
-    return f"{base_url.rstrip('/')}/{endpoint.lstrip('/')}"
-
-
-def _http_json(url: str, method: str = "GET", headers: dict | None = None, payload: dict | None = None, timeout: int = 15) -> dict:
-    req_headers = {"Accept": "application/json"}
-    if headers:
-        req_headers.update(headers)
-
-    req_data = None
-    if payload is not None:
-        req_data = json.dumps(payload).encode("utf-8")
-        req_headers["Content-Type"] = "application/json"
-
-    request_obj = urlrequest.Request(url=url, data=req_data, headers=req_headers, method=method)
-    with urlrequest.urlopen(request_obj, timeout=timeout) as response:
-        body = response.read().decode("utf-8")
-    return json.loads(body) if body else {}
-
-
-def _first_non_empty(source: dict, keys: list[str], default_value: str = ""):
-    for key in keys:
-        value = source.get(key)
-        if value is not None and str(value).strip() != "":
-            return value
-    return default_value
-
-
-def _extract_registry_records(registry_response: dict) -> list[dict]:
-    data = registry_response.get("data", registry_response)
-
-    if isinstance(data, dict):
-        if isinstance(data.get("subscriptions"), list):
-            return data.get("subscriptions", [])
-        if isinstance(data.get("customers"), list):
-            records: list[dict] = []
-            for customer in data.get("customers", []):
-                subs = customer.get("subscriptions", []) if isinstance(customer, dict) else []
-                if isinstance(subs, list):
-                    records.extend(subs)
-            return records
-        if isinstance(data.get("vehicles"), list):
-            return data.get("vehicles", [])
-
-    if isinstance(data, list):
-        return data
-
-    return []
-
-
-def fetch_onboarded_vehicle_summary(make_filter: str = "SML") -> dict:
-    cfg = _load_local_config()
-    auth_cfg = cfg.get("auth", {})
-    registry_cfg = cfg.get("vehicle_registry", {})
-
-    auth_base_url = _get_secret_value("auth", "AUTH_BASE_URL", auth_cfg.get("base_url", ""))
-    auth_endpoint = _get_secret_value("auth", "AUTH_ENDPOINT", auth_cfg.get("endpoint", ""))
-    auth_client_id = _get_secret_value("auth", "AUTH_CLIENT_ID", auth_cfg.get("client_id", ""))
-    auth_client_secret = _get_secret_value("auth", "AUTH_CLIENT_SECRET", auth_cfg.get("client_secret", ""))
-
-    registry_base_url = _get_secret_value(
-        "vehicle_registry", "VEHICLE_REGISTRY_BASE_URL", registry_cfg.get("base_url", "")
-    )
-    registry_endpoint = _get_secret_value(
-        "vehicle_registry", "VEHICLE_REGISTRY_ENDPOINT", registry_cfg.get("endpoint", "")
-    )
-
-    if not all([auth_base_url, auth_endpoint, auth_client_id, auth_client_secret, registry_base_url, registry_endpoint]):
-        raise ValueError("Missing auth/vehicle registry configuration")
-
-    auth_url = _join_url(auth_base_url, auth_endpoint)
-    token_response = _http_json(
-        auth_url,
-        method="POST",
-        payload={"clientId": auth_client_id, "clientSecret": auth_client_secret},
-        timeout=15,
-    )
-
-    access_token = token_response.get("data", {}).get("accessToken")
-    if not access_token:
-        raise RuntimeError("Access token missing in auth response")
-
-    registry_url = _join_url(registry_base_url, registry_endpoint)
-    registry_response = _http_json(
-        registry_url,
-        method="GET",
-        headers={"Authorization": f"Bearer {access_token}"},
-        timeout=20,
-    )
-
-    records = _extract_registry_records(registry_response)
-    unique_vehicle_map: dict[str, dict] = {}
-
-    for index, item in enumerate(records):
-        vehicle = item.get("vehicle", item) if isinstance(item, dict) else {}
-        if not isinstance(vehicle, dict):
-            continue
-
-        make = str(
-            _first_non_empty(vehicle, ["make", "vehicleMake"], _first_non_empty(item, ["make", "vehicleMake"], ""))
-        ).strip().upper()
-        if make != make_filter.upper():
-            continue
-
-        vehicle_id = _first_non_empty(
-            vehicle,
-            ["vehicleId", "id", "vehicle_id", "registrationNumber", "vehicleNumber"],
-            _first_non_empty(item, ["vehicleId", "id", "vehicle_id", "registrationNumber", "vehicleNumber"], ""),
-        )
-        vehicle_key = str(vehicle_id).strip() if str(vehicle_id).strip() else f"__unknown_{index}"
-
-        model = str(
-            _first_non_empty(
-                vehicle,
-                ["model", "vehicleModel"],
-                _first_non_empty(item, ["model", "vehicleModel"], "Unknown"),
-            )
-        ).strip() or "Unknown"
-        variant = str(
-            _first_non_empty(
-                vehicle,
-                ["variant", "vehicleVariant", "variantName", "subModel", "modelVariant"],
-                _first_non_empty(item, ["variant", "vehicleVariant", "variantName", "subModel", "modelVariant"], "Unknown"),
-            )
-        ).strip() or "Unknown"
-
-        unique_vehicle_map[vehicle_key] = {"model": model, "variant": variant}
-
-    model_counts: dict[str, int] = {}
-    variant_counts: dict[str, int] = {}
-    for details in unique_vehicle_map.values():
-        model = details["model"]
-        variant = details["variant"]
-        model_variant = f"{model} | {variant}"
-        model_counts[model] = model_counts.get(model, 0) + 1
-        variant_counts[model_variant] = variant_counts.get(model_variant, 0) + 1
-
-    model_df = pd.DataFrame(
-        [{"model": key, "count": value} for key, value in model_counts.items()]
-    ).sort_values("count", ascending=False, ignore_index=True)
-
-    variant_df = pd.DataFrame(
-        [{"model_variant": key, "count": value} for key, value in variant_counts.items()]
-    ).sort_values("count", ascending=False, ignore_index=True)
-
-    vehicle_model_map = {
-        vehicle_id: details["model"]
-        for vehicle_id, details in unique_vehicle_map.items()
-        if not vehicle_id.startswith("__unknown_")
-    }
-
-    vehicle_details_map = {
-        vehicle_id: {"model": details["model"], "variant": details["variant"]}
-        for vehicle_id, details in unique_vehicle_map.items()
-        if not vehicle_id.startswith("__unknown_")
-    }
-
-    return {
-        "total": len(unique_vehicle_map),
-        "model_df": model_df,
-        "variant_df": variant_df,
-        "vehicle_model_map": vehicle_model_map,
-        "vehicle_details_map": vehicle_details_map,
-    }
+# ============================================================================
+# AUTHENTICATION & CONFIGURATION
+# ============================================================================
 
 
 def _safe_cache_key(container_name: str, year: int, month: int) -> str:
@@ -255,9 +77,9 @@ def _cache_paths(container_name: str, year: int, month: int):
 
 def _gist_credentials() -> tuple[str, str]:
     """Return (gist_id, github_token) from secrets or config, empty strings if not configured."""
-    cfg = _load_local_config().get("github_gist", {})
-    gist_id = _get_secret_value("github_gist", "GITHUB_GIST_ID", cfg.get("gist_id", ""))
-    token = _get_secret_value("github_gist", "GITHUB_GIST_TOKEN", cfg.get("token", ""))
+    cfg = load_local_config().get("github_gist", {})
+    gist_id = get_secret_value("github_gist", "GITHUB_GIST_ID", cfg.get("gist_id", ""))
+    token = get_secret_value("github_gist", "GITHUB_GIST_TOKEN", cfg.get("token", ""))
     return gist_id.strip(), token.strip()
 
 
