@@ -713,28 +713,6 @@ if stored_key != current_key or "df_results" not in st.session_state:
                 st.session_state["df_results"] = cached_raw
                 st.session_state["df_processed"] = cached_processed
                 st.session_state["cache_loaded_at"] = cached_at
-
-                now = datetime.now()
-                # For current month, always merge recent hours so today's data appears on open.
-                if (int(year), int(month)) == (now.year, now.month):
-                    recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=48)
-                    recent_processed = fetch_recent_processed_days(
-                        sas_url, container_name, int(year), int(month), lookback_hours=48
-                    )
-                    st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
-                    st.session_state["df_processed"] = merge_daily_data(
-                        st.session_state["df_processed"], recent_processed
-                    )
-                    # Persist if cache is stale, to keep shared cache fresh for all users.
-                    if is_cache_stale(cached_at, max_age_minutes=15):
-                        save_cached_datasets(
-                            container_name,
-                            int(year),
-                            int(month),
-                            st.session_state["df_results"],
-                            st.session_state["df_processed"],
-                        )
-                        st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             else:
                 st.session_state["df_results"] = count_vehicles_per_hour_for_month(
                     sas_url, container_name, int(year), int(month)
@@ -763,13 +741,13 @@ if st.session_state.get("recent_data_bootstrap_key") != recent_bootstrap_key:
     try:
         now = datetime.now()
         if (int(year), int(month)) == (now.year, now.month):
-            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=48)
+            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=12)
             recent_processed = fetch_recent_processed_days(
                 sas_url,
                 container_name,
                 int(year),
                 int(month),
-                lookback_hours=48,
+                lookback_hours=12,
             )
             st.session_state["df_results"] = merge_hourly_data(
                 st.session_state.get("df_results", pd.DataFrame()),
@@ -783,7 +761,8 @@ if st.session_state.get("recent_data_bootstrap_key") != recent_bootstrap_key:
     except Exception as exc:
         st.error(f"Unable to load recent data on startup: {exc}")
 
-if "total_vehicles_onboarded" not in st.session_state:
+# Load only lightweight onboarded summary at startup.
+if "onboarded_vehicle_details_map" not in st.session_state:
     try:
         onboarded_summary = fetch_onboarded_vehicle_summary(make_filter="SML")
         st.session_state["total_vehicles_onboarded"] = onboarded_summary["total"]
@@ -791,77 +770,17 @@ if "total_vehicles_onboarded" not in st.session_state:
         st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
         st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
         st.session_state["onboarded_vehicle_details_map"] = onboarded_summary.get("vehicle_details_map", {})
-        st.session_state["onboarded_presence_df"] = fetch_onboarded_model_presence_for_month(
-            sas_url,
-            container_name,
-            int(year),
-            int(month),
-            st.session_state["onboarded_vehicle_model_map"],
-        )
-        st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
-            sas_url,
-            container_name,
-            int(year),
-            int(month),
-            st.session_state["onboarded_vehicle_details_map"],
-        )
         st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state.pop("onboarded_error", None)
-    except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-        st.session_state["onboarded_error"] = str(exc)
-
-# Auto-refresh onboarding drill-down with recent data once per month/session,
-# so newly arrived day data appears even before manual refresh.
-onboarded_auto_refresh_key = f"{int(year)}-{int(month):02d}"
-if st.session_state.get("onboarded_presence_bootstrap_key") != onboarded_auto_refresh_key:
-    try:
-        recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=24)
-        presence_updates = fetch_onboarded_model_presence_for_days(
-            sas_url,
-            container_name,
-            int(year),
-            int(month),
-            st.session_state.get("onboarded_vehicle_model_map", {}),
-            recent_days,
-        )
-        existing_presence = st.session_state.get("onboarded_presence_df", pd.DataFrame())
-        st.session_state["onboarded_presence_df"] = merge_model_daily_data(existing_presence, presence_updates)
-        st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
-            sas_url,
-            container_name,
-            int(year),
-            int(month),
-            st.session_state.get("onboarded_vehicle_details_map", {}),
-        )
-        st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        st.session_state["onboarded_presence_bootstrap_key"] = onboarded_auto_refresh_key
-    except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-        st.session_state["onboarded_error"] = str(exc)
-
-if (
-    "onboarded_vehicle_hours_df" not in st.session_state
-    or (
-        st.session_state.get("onboarded_vehicle_hours_df", pd.DataFrame()).empty
-        and st.session_state.get("onboarded_vehicle_details_map")
-    )
-):
-    try:
-        st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
-            sas_url,
-            container_name,
-            int(year),
-            int(month),
-            st.session_state.get("onboarded_vehicle_details_map", {}),
-        )
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
         st.session_state["onboarded_error"] = str(exc)
 
 if st.button("Refresh Data", use_container_width=False):
     with st.spinner("Refreshing recent hours..."):
         try:
-            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=48)
+            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
             recent_processed = fetch_recent_processed_days(
-                sas_url, container_name, int(year), int(month), lookback_hours=48
+                sas_url, container_name, int(year), int(month), lookback_hours=24
             )
             st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
             st.session_state["df_processed"] = merge_daily_data(st.session_state["df_processed"], recent_processed)
@@ -880,24 +799,9 @@ if st.button("Refresh Data", use_container_width=False):
             st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
             st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
             st.session_state["onboarded_vehicle_details_map"] = onboarded_summary.get("vehicle_details_map", {})
-            recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=24)
-            presence_updates = fetch_onboarded_model_presence_for_days(
-                sas_url,
-                container_name,
-                int(year),
-                int(month),
-                st.session_state["onboarded_vehicle_model_map"],
-                recent_days,
-            )
-            existing_presence = st.session_state.get("onboarded_presence_df", pd.DataFrame())
-            st.session_state["onboarded_presence_df"] = merge_model_daily_data(existing_presence, presence_updates)
-            st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
-                sas_url,
-                container_name,
-                int(year),
-                int(month),
-                st.session_state["onboarded_vehicle_details_map"],
-            )
+            st.session_state.pop("onboarded_presence_df", None)
+            st.session_state.pop("onboarded_vehicle_hours_df", None)
+            st.session_state.pop("onboarded_tab_load_key", None)
             st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             st.session_state.pop("onboarded_error", None)
         except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
@@ -1154,6 +1058,39 @@ if st.session_state["active_tab"] == 2:
 
 # Tab 3: Onboarded Drill-down
 if st.session_state["active_tab"] == 3:
+    onboarded_tab_load_key = f"{int(year)}-{int(month):02d}"
+    if st.session_state.get("onboarded_tab_load_key") != onboarded_tab_load_key:
+        try:
+            presence_df_month = fetch_onboarded_model_presence_for_month(
+                sas_url,
+                container_name,
+                int(year),
+                int(month),
+                st.session_state.get("onboarded_vehicle_model_map", {}),
+            )
+            recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=24)
+            presence_updates = fetch_onboarded_model_presence_for_days(
+                sas_url,
+                container_name,
+                int(year),
+                int(month),
+                st.session_state.get("onboarded_vehicle_model_map", {}),
+                recent_days,
+            )
+            st.session_state["onboarded_presence_df"] = merge_model_daily_data(presence_df_month, presence_updates)
+            st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
+                sas_url,
+                container_name,
+                int(year),
+                int(month),
+                st.session_state.get("onboarded_vehicle_details_map", {}),
+            )
+            st.session_state["onboarded_tab_load_key"] = onboarded_tab_load_key
+            st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            st.session_state.pop("onboarded_error", None)
+        except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+            st.session_state["onboarded_error"] = str(exc)
+
     st.caption("Shows onboarded fleet composition and daily raw-data upload presence using vehicle registry mapping.")
     model_df = st.session_state.get("onboarded_model_counts", pd.DataFrame())
     variant_df = st.session_state.get("onboarded_variant_counts", pd.DataFrame())
