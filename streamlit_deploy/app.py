@@ -80,14 +80,21 @@ st.markdown(
         font-family: Bosch Sans, Helvetica Neue, Helvetica, Arial, sans-serif !important;
     }
     .block-container {
-        padding: 3.5rem 1.5rem 0.75rem 1.5rem !important;
+        padding: 0.35rem 1rem 0.5rem 1rem !important;
         max-width: 100% !important;
     }
     .brand-header {
         display: flex;
         flex-direction: column;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
         width: 100%;
-        margin-bottom: 0.75rem;
+        z-index: 999;
+        background: #ffffff;
+        padding: 0.2rem 1rem 0.3rem 1rem;
+        box-sizing: border-box;
     }
     .brand-supergraphic {
         width: 100vw;
@@ -110,6 +117,56 @@ st.markdown(
         align-items: flex-start;
         justify-content: space-between;
         padding: 0;
+    }
+    .brand-header-spacer {
+        height: 72px;
+    }
+    @media (max-width: 992px) {
+        .block-container {
+            padding: 0.25rem 0.8rem 0.4rem 0.8rem !important;
+        }
+        .brand-header {
+            padding: 0.2rem 0.8rem 0.3rem 0.8rem;
+        }
+        .brand-logo {
+            height: 50px;
+            margin-left: 0.9rem;
+        }
+        .brand-title {
+            font-size: 1.6rem;
+        }
+        .brand-subtitle {
+            font-size: 0.88rem;
+        }
+        .brand-header-spacer {
+            height: 64px;
+        }
+    }
+    @media (max-width: 640px) {
+        .block-container {
+            padding: 0.2rem 0.65rem 0.35rem 0.65rem !important;
+        }
+        .brand-header {
+            padding: 0.15rem 0.65rem 0.25rem 0.65rem;
+        }
+        .brand-title-row {
+            align-items: center;
+        }
+        .brand-logo {
+            height: 40px;
+            margin-left: 0.65rem;
+        }
+        .brand-title {
+            font-size: 1.25rem;
+            line-height: 1.2;
+        }
+        .brand-subtitle {
+            font-size: 0.78rem;
+            margin-top: 0.1rem;
+        }
+        .brand-header-spacer {
+            height: 52px;
+        }
     }
     .brand-text {
         flex: 1;
@@ -222,6 +279,7 @@ st.markdown(
             {_logo_img}
         </div>
     </div>
+    <div class="brand-header-spacer"></div>
     """,
     unsafe_allow_html=True,
 )
