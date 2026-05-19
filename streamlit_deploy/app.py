@@ -1,6 +1,7 @@
 """Fleet Level Dashboard - Main application entry point and orchestration."""
 
 import calendar
+import base64
 from datetime import datetime, timedelta
 import io
 import json
@@ -43,6 +44,16 @@ BOSCH_BORDER = "#d0d4d8"
 
 APP_ROOT = Path(__file__).resolve().parent
 BRAND_LOGO_PATH = APP_ROOT / "assets" / "bosch_logo.svg"
+SUPERGRAPHIC_PATH = APP_ROOT / "assets" / "bosch_supergraphic.svg"
+
+
+def _svg_b64(path: Path) -> str:
+    """Return a data URI for an SVG file (base64 encoded)."""
+    try:
+        data = base64.b64encode(path.read_bytes()).decode()
+        return f"data:image/svg+xml;base64,{data}"
+    except OSError:
+        return ""
 
 PLOTLY_BRAND_LAYOUT = {
     "template": "plotly_white",
@@ -72,39 +83,36 @@ st.markdown(
         padding: 3.5rem 1.5rem 0.75rem 1.5rem !important;
         max-width: 100% !important;
     }
-    .brand-ribbon {
-        height: 0.45rem;
+    .brand-header {
+        display: flex;
+        flex-direction: column;
         width: 100%;
-        background: linear-gradient(90deg, #00629a 0%, #007bc0 55%, #18837e 100%);
-        border-radius: 0;
-        margin-bottom: 0.85rem;
+        margin-bottom: 0.75rem;
     }
-    .brand-atmo {
-        position: relative;
-        height: 0;
+    .brand-supergraphic {
+        width: 100vw;
+        height: 8px;
+        display: block;
+        line-height: 0;
+        font-size: 0;
+        margin-bottom: 0.35rem;
+        margin-left: calc(50% - 50vw);
     }
-    .brand-atmo::before,
-    .brand-atmo::after {
-        content: "";
-        position: absolute;
-        pointer-events: none;
-        z-index: 0;
+    .brand-supergraphic img {
+        width: 100%;
+        height: 8px;
+        display: block;
+        object-fit: cover;
+        object-position: center top;
     }
-    .brand-atmo::before {
-        right: 2%;
-        top: -1.25rem;
-        width: 11rem;
-        height: 11rem;
-        border-radius: 999px;
-        background: radial-gradient(circle at 35% 35%, rgba(0, 123, 192, 0.12), rgba(0, 123, 192, 0));
+    .brand-title-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        padding: 0;
     }
-    .brand-atmo::after {
-        left: 8%;
-        top: -0.5rem;
-        width: 8rem;
-        height: 8rem;
-        border-radius: 999px;
-        background: radial-gradient(circle at 65% 40%, rgba(24, 131, 126, 0.12), rgba(24, 131, 126, 0));
+    .brand-text {
+        flex: 1;
     }
     .brand-title {
         margin: 0;
@@ -117,18 +125,33 @@ st.markdown(
         color: #4e5256;
         font-size: 0.95rem;
     }
-    .brand-logo-card {
-        background: #ffffff;
-        border: 1px solid #d0d4d8;
-        border-radius: 0;
-        padding: 0.45rem;
-        max-width: 220px;
-        margin-left: auto;
+    .brand-logo {
+        flex-shrink: 0;
+        margin-left: 1.5rem;
+        height: 60px;
+        width: auto;
+        display: block;
     }
-    .brand-logo-wrap {
-        display: flex;
-        justify-content: flex-end;
-        align-items: flex-start;
+    .onboarded-metric-card {
+        text-align: right;
+        background: #e2f5e7;
+        border: 1px solid #86d7a2;
+        border-radius: 0;
+        padding: 0.75rem 1rem;
+        width: 100%;
+        box-sizing: border-box;
+        margin: 0.25rem 0 0.75rem 0;
+    }
+    .onboarded-metric-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #006c3a;
+    }
+    .onboarded-metric-value {
+        font-size: 2rem;
+        font-weight: 800;
+        color: #00512a;
+        line-height: 1.1;
     }
     [data-testid="stAppViewContainer"] {
         background: linear-gradient(180deg, #ffffff 0%, #f7f9fa 100%);
@@ -153,6 +176,16 @@ st.markdown(
     .stFormSubmitButton button[kind="primaryFormSubmit"]:hover {
         background-color: var(--bosch-blue-40) !important;
     }
+    .stButton button[kind="secondary"] {
+        color: var(--bosch-blue-50) !important;
+    }
+    .stButton button[kind="secondary"] p {
+        color: var(--bosch-blue-50) !important;
+    }
+    .stButton button[kind="secondary"]:hover,
+    .stButton button[kind="secondary"]:hover p {
+        color: var(--bosch-blue-40) !important;
+    }
     [data-baseweb="select"] > div,
     [data-testid="stNumberInputContainer"],
     [data-baseweb="input"] input {
@@ -172,22 +205,26 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown('<div class="brand-ribbon"></div><div class="brand-atmo"></div>', unsafe_allow_html=True)
+_sg_uri = _svg_b64(SUPERGRAPHIC_PATH)
+_logo_uri = _svg_b64(BRAND_LOGO_PATH)
+_sg_img = f'<img src="{_sg_uri}" alt="">' if _sg_uri else '<div style="background:#007bc0;width:100%;height:8px;"></div>'
+_logo_img = f'<img class="brand-logo" src="{_logo_uri}" alt="Bosch">' if _logo_uri else '<span style="font-weight:700;font-size:1.2rem;">BOSCH</span>'
 
-brand_left, brand_right = st.columns([0.78, 0.22])
-with brand_left:
-    st.markdown('<h1 class="brand-title">Fleet Level Dashboard</h1>', unsafe_allow_html=True)
-    st.markdown(
-        '<p class="brand-subtitle">Vehicle count analytics across hourly partitions (IST)</p>',
-        unsafe_allow_html=True,
-    )
-with brand_right:
-    st.markdown('<div class="brand-logo-wrap"><div class="brand-logo-card">', unsafe_allow_html=True)
-    if BRAND_LOGO_PATH.exists():
-        st.image(str(BRAND_LOGO_PATH), use_container_width=True)
-    else:
-        st.markdown("**BOSCH**")
-    st.markdown("</div></div>", unsafe_allow_html=True)
+st.markdown(
+    f"""
+    <div class="brand-header">
+        <div class="brand-supergraphic">{_sg_img}</div>
+        <div class="brand-title-row">
+            <div class="brand-text">
+                <h1 class="brand-title">Fleet Level Dashboard</h1>
+                <p class="brand-subtitle">Vehicle count analytics across hourly partitions (IST)</p>
+            </div>
+            {_logo_img}
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 CACHE_DIR = Path("streamlit_deploy") / "data_cache"
 
@@ -911,7 +948,7 @@ if "onboarded_vehicle_details_map" not in st.session_state:
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
         st.session_state["onboarded_error"] = str(exc)
 
-if st.button("Refresh Data", use_container_width=False):
+if st.button("Refresh Data", use_container_width=False, type="primary"):
     with st.spinner("Refreshing recent hours..."):
         try:
             recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
@@ -959,13 +996,15 @@ with metric_col:
     total_onboarded = st.session_state.get("total_vehicles_onboarded", "N/A")
     st.markdown(
         f"""
-        <div style="text-align: right; background: #e2f5e7; border: 1px solid #86d7a2; border-radius: 0; padding: 0.75rem 1rem;">
-            <div style="font-size: 0.95rem; font-weight: 700; color: #006c3a;">Total vehicles onboarded</div>
-            <div style="font-size: 2rem; font-weight: 800; color: #00512a; line-height: 1.1;">{total_onboarded}</div>
+        <div class="onboarded-metric-card">
+            <div class="onboarded-metric-title">Total vehicles onboarded</div>
+            <div class="onboarded-metric-value">{total_onboarded}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+st.markdown('<div style="height:0.5rem;"></div>', unsafe_allow_html=True)
 
 df_results = st.session_state["df_results"]
 
@@ -991,16 +1030,36 @@ if "active_tab" not in st.session_state:
 # Tab selector using buttons
 tab_cols = st.columns(4)
 with tab_cols[0]:
-    if st.button("📊 Daily Drill-down", use_container_width=True, key="tab_drill_down"):
+    if st.button(
+        "📊 Daily Drill-down",
+        use_container_width=True,
+        key="tab_drill_down",
+        type="secondary",
+    ):
         st.session_state["active_tab"] = 0
 with tab_cols[1]:
-    if st.button("🔥 Vehicles Live/Hour Heatmap", use_container_width=True, key="tab_heatmap"):
+    if st.button(
+        "🔥 Vehicles Live/Hour Heatmap",
+        use_container_width=True,
+        key="tab_heatmap",
+        type="secondary",
+    ):
         st.session_state["active_tab"] = 1
 with tab_cols[2]:
-    if st.button("✅ Vehicles Result Processed", use_container_width=True, key="tab_processed"):
+    if st.button(
+        "✅ Vehicles Result Processed",
+        use_container_width=True,
+        key="tab_processed",
+        type="secondary",
+    ):
         st.session_state["active_tab"] = 2
 with tab_cols[3]:
-    if st.button("🧭 Onboarded Vehicles Drill Down", use_container_width=True, key="tab_onboarded"):
+    if st.button(
+        "🧭 Onboarded Vehicles Drill Down",
+        use_container_width=True,
+        key="tab_onboarded",
+        type="secondary",
+    ):
         st.session_state["active_tab"] = 3
 
 st.divider()
