@@ -41,6 +41,9 @@ BOSCH_GREEN = "#00884a"
 BOSCH_BG_MUTED = "#eff1f2"
 BOSCH_BORDER = "#d0d4d8"
 
+APP_ROOT = Path(__file__).resolve().parent
+BRAND_LOGO_PATH = APP_ROOT / "assets" / "bosch_logo.svg"
+
 PLOTLY_BRAND_LAYOUT = {
     "template": "plotly_white",
     "paper_bgcolor": "#ffffff",
@@ -68,6 +71,64 @@ st.markdown(
     .block-container {
         padding: 3.5rem 1.5rem 0.75rem 1.5rem !important;
         max-width: 100% !important;
+    }
+    .brand-ribbon {
+        height: 0.45rem;
+        width: 100%;
+        background: linear-gradient(90deg, #00629a 0%, #007bc0 55%, #18837e 100%);
+        border-radius: 0;
+        margin-bottom: 0.85rem;
+    }
+    .brand-atmo {
+        position: relative;
+        height: 0;
+    }
+    .brand-atmo::before,
+    .brand-atmo::after {
+        content: "";
+        position: absolute;
+        pointer-events: none;
+        z-index: 0;
+    }
+    .brand-atmo::before {
+        right: 2%;
+        top: -1.25rem;
+        width: 11rem;
+        height: 11rem;
+        border-radius: 999px;
+        background: radial-gradient(circle at 35% 35%, rgba(0, 123, 192, 0.12), rgba(0, 123, 192, 0));
+    }
+    .brand-atmo::after {
+        left: 8%;
+        top: -0.5rem;
+        width: 8rem;
+        height: 8rem;
+        border-radius: 999px;
+        background: radial-gradient(circle at 65% 40%, rgba(24, 131, 126, 0.12), rgba(24, 131, 126, 0));
+    }
+    .brand-title {
+        margin: 0;
+        color: #0b1f2a;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
+    .brand-subtitle {
+        margin: 0.2rem 0 0;
+        color: #4e5256;
+        font-size: 0.95rem;
+    }
+    .brand-logo-card {
+        background: #ffffff;
+        border: 1px solid #d0d4d8;
+        border-radius: 0;
+        padding: 0.45rem;
+        max-width: 220px;
+        margin-left: auto;
+    }
+    .brand-logo-wrap {
+        display: flex;
+        justify-content: flex-end;
+        align-items: flex-start;
     }
     [data-testid="stAppViewContainer"] {
         background: linear-gradient(180deg, #ffffff 0%, #f7f9fa 100%);
@@ -111,8 +172,22 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("Fleet Level Dashboard")
-st.caption("Vehicle count analytics across hourly partitions (IST)")
+st.markdown('<div class="brand-ribbon"></div><div class="brand-atmo"></div>', unsafe_allow_html=True)
+
+brand_left, brand_right = st.columns([0.78, 0.22])
+with brand_left:
+    st.markdown('<h1 class="brand-title">Fleet Level Dashboard</h1>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="brand-subtitle">Vehicle count analytics across hourly partitions (IST)</p>',
+        unsafe_allow_html=True,
+    )
+with brand_right:
+    st.markdown('<div class="brand-logo-wrap"><div class="brand-logo-card">', unsafe_allow_html=True)
+    if BRAND_LOGO_PATH.exists():
+        st.image(str(BRAND_LOGO_PATH), use_container_width=True)
+    else:
+        st.markdown("**BOSCH**")
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 CACHE_DIR = Path("streamlit_deploy") / "data_cache"
 
