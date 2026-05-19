@@ -34,15 +34,76 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+BOSCH_PRIMARY = "#007bc0"
+BOSCH_PRIMARY_DARK = "#00629a"
+BOSCH_TURQUOISE = "#18837e"
+BOSCH_GREEN = "#00884a"
+BOSCH_BG_MUTED = "#eff1f2"
+BOSCH_BORDER = "#d0d4d8"
+
+PLOTLY_BRAND_LAYOUT = {
+    "template": "plotly_white",
+    "paper_bgcolor": "#ffffff",
+    "plot_bgcolor": "#ffffff",
+    "font": {
+        "family": "Bosch Sans, Helvetica Neue, Helvetica, Arial, sans-serif",
+        "color": "#000000",
+    },
+}
+
 st.markdown(
     """
     <style>
+    :root {
+        --bosch-blue-50: #007bc0;
+        --bosch-blue-40: #00629a;
+        --bosch-green-50: #00884a;
+        --bosch-turquoise-50: #18837e;
+        --bosch-gray-95: #eff1f2;
+        --bosch-gray-85: #d0d4d8;
+    }
+    html, body, [class*="css"] {
+        font-family: Bosch Sans, Helvetica Neue, Helvetica, Arial, sans-serif !important;
+    }
     .block-container {
         padding: 3.5rem 1.5rem 0.75rem 1.5rem !important;
         max-width: 100% !important;
     }
+    [data-testid="stAppViewContainer"] {
+        background: linear-gradient(180deg, #ffffff 0%, #f7f9fa 100%);
+    }
     [data-testid="stVerticalBlock"] {
         gap: 0.5rem !important;
+    }
+    .stButton button,
+    .stDownloadButton button,
+    .stFormSubmitButton button {
+        border-radius: 0 !important;
+        border: 0 !important;
+    }
+    .stButton button[kind="primary"],
+    .stDownloadButton button[kind="primary"],
+    .stFormSubmitButton button[kind="primaryFormSubmit"] {
+        background-color: var(--bosch-blue-50) !important;
+        color: #ffffff !important;
+    }
+    .stButton button[kind="primary"]:hover,
+    .stDownloadButton button[kind="primary"]:hover,
+    .stFormSubmitButton button[kind="primaryFormSubmit"]:hover {
+        background-color: var(--bosch-blue-40) !important;
+    }
+    [data-baseweb="select"] > div,
+    [data-testid="stNumberInputContainer"],
+    [data-baseweb="input"] input {
+        border-radius: 0 !important;
+        background: var(--bosch-gray-95) !important;
+    }
+    [data-baseweb="input"] input,
+    [data-testid="stNumberInputContainer"] {
+        border-bottom: 1px solid var(--bosch-gray-85) !important;
+    }
+    [data-testid="stTabs"] button {
+        border-radius: 0 !important;
     }
     footer {visibility: hidden;}
     </style>
@@ -823,9 +884,9 @@ with metric_col:
     total_onboarded = st.session_state.get("total_vehicles_onboarded", "N/A")
     st.markdown(
         f"""
-        <div style="text-align: right; background: #f2faf5; border: 1px solid #b8e0c9; border-radius: 10px; padding: 0.75rem 1rem;">
-            <div style="font-size: 0.95rem; font-weight: 700; color: #1f6f52;">Total vehicles onboarded</div>
-            <div style="font-size: 2rem; font-weight: 800; color: #0f5132; line-height: 1.1;">{total_onboarded}</div>
+        <div style="text-align: right; background: #e2f5e7; border: 1px solid #86d7a2; border-radius: 0; padding: 0.75rem 1rem;">
+            <div style="font-size: 0.95rem; font-weight: 700; color: #006c3a;">Total vehicles onboarded</div>
+            <div style="font-size: 2rem; font-weight: 800; color: #00512a; line-height: 1.1;">{total_onboarded}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -897,7 +958,7 @@ if st.session_state["active_tab"] == 0:
             go.Bar(
                 x=hourly_data["ist_hour"],
                 y=hourly_data["vehicle_count"],
-                marker={"color": "steelblue"},
+                marker={"color": BOSCH_PRIMARY},
                 text=hourly_data["vehicle_count"],
                 textposition="outside",
                 hovertemplate="<b>Hour:</b> %{x}:00 IST<br><b>Vehicles:</b> %{y}<extra></extra>",
@@ -907,7 +968,7 @@ if st.session_state["active_tab"] == 0:
             title=f"Vehicle Count by Hour - Day {int(selected_day)}, {int(year)}-{int(month):02d} (IST)",
             xaxis_title="Hour of Day (IST)",
             yaxis_title="Vehicle Count",
-            template="plotly_white",
+            **PLOTLY_BRAND_LAYOUT,
             autosize=True,
             showlegend=False,
             xaxis={"tickmode": "linear", "tick0": 0, "dtick": 1},
@@ -935,7 +996,7 @@ if st.session_state["active_tab"] == 1:
             z=pivot.values,
             x=[f"{h:02d}:00" for h in range(24)],
             y=[f"Day {int(d)}" for d in pivot.index],
-            colorscale="YlOrRd",
+            colorscale=[[0.0, "#e8f1ff"], [0.3, "#9dc9ff"], [0.6, "#007bc0"], [1.0, "#004975"]],
             text=pivot.values,
             texttemplate="%{text}",
             hovertemplate="<b>Day:</b> %{y}<br><b>Hour:</b> %{x} IST<br><b>Vehicles:</b> %{z}<extra></extra>",
@@ -946,7 +1007,7 @@ if st.session_state["active_tab"] == 1:
         title=f"Vehicles Live/Hour Heatmap - {int(year)}-{int(month):02d} (IST)",
         xaxis_title="Hour of Day (IST)",
         yaxis_title="Day",
-        template="plotly_white",
+        **PLOTLY_BRAND_LAYOUT,
         autosize=True,
         margin={"l": 80, "r": 80, "t": 50, "b": 50},
         yaxis={"autorange": "reversed"},
@@ -968,7 +1029,7 @@ if st.session_state["active_tab"] == 2:
             go.Bar(
                 x=df_processed_sorted["day"],
                 y=df_processed_sorted["processed_count"],
-                marker={"color": "seagreen"},
+                marker={"color": BOSCH_GREEN},
                 text=df_processed_sorted["processed_count"],
                 textposition="outside",
                 hovertemplate="<b>Day:</b> %{x}<br><b>Vehicles Processed:</b> %{y}<extra></extra>",
@@ -978,7 +1039,7 @@ if st.session_state["active_tab"] == 2:
             title=f"Vehicles Processed Per Day - {int(year)}-{int(month):02d}",
             xaxis_title="Day",
             yaxis_title="Unique Folders Count",
-            template="plotly_white",
+            **PLOTLY_BRAND_LAYOUT,
             autosize=True,
             showlegend=False,
             xaxis={"tickmode": "linear", "tick0": 1, "dtick": 1},
@@ -1033,7 +1094,7 @@ if st.session_state["active_tab"] == 2:
                 title=f"Processed Vehicle IDs by Model and Hour (IST) - Day {int(selected_processed_day)}",
                 xaxis_title="Hour of Day (IST)",
                 yaxis_title="Processed Vehicle IDs",
-                template="plotly_white",
+                **PLOTLY_BRAND_LAYOUT,
                 autosize=True,
                 barmode="group",
                 xaxis={"categoryorder": "array", "categoryarray": [f"{h:02d}:00" for h in range(24)]},
@@ -1119,7 +1180,7 @@ if st.session_state["active_tab"] == 3:
                         x=model_df["count"],
                         y=model_df["model"],
                         orientation="h",
-                        marker={"color": "#2f7fdb"},
+                        marker={"color": BOSCH_PRIMARY},
                         text=model_df["count"],
                         textposition="outside",
                         hovertemplate="<b>Model:</b> %{y}<br><b>Onboarded:</b> %{x}<extra></extra>",
@@ -1129,7 +1190,7 @@ if st.session_state["active_tab"] == 3:
                     title="Onboarded Vehicles by Model",
                     xaxis_title="Vehicle Count",
                     yaxis_title="Model",
-                    template="plotly_white",
+                    **PLOTLY_BRAND_LAYOUT,
                     autosize=True,
                     showlegend=False,
                     margin={"l": 80, "r": 40, "t": 50, "b": 50},
@@ -1148,7 +1209,7 @@ if st.session_state["active_tab"] == 3:
                         x=variant_display["count"],
                         y=variant_display["model_variant"],
                         orientation="h",
-                        marker={"color": "#1fa37a"},
+                        marker={"color": BOSCH_TURQUOISE},
                         text=variant_display["count"],
                         textposition="outside",
                         hovertemplate="<b>Model | Variant:</b> %{y}<br><b>Onboarded:</b> %{x}<extra></extra>",
@@ -1158,7 +1219,7 @@ if st.session_state["active_tab"] == 3:
                     title="Top 25 Onboarded Model | Variant",
                     xaxis_title="Vehicle Count",
                     yaxis_title="Model | Variant",
-                    template="plotly_white",
+                    **PLOTLY_BRAND_LAYOUT,
                     autosize=True,
                     showlegend=False,
                     margin={"l": 80, "r": 40, "t": 50, "b": 50},
@@ -1183,7 +1244,7 @@ if st.session_state["active_tab"] == 3:
                     x=daily_presence_totals["day"],
                     y=daily_presence_totals["count"],
                     mode="lines+markers",
-                    line={"color": "#2563eb", "width": 3},
+                    line={"color": BOSCH_PRIMARY, "width": 3},
                     marker={"size": 7},
                     hovertemplate="<b>Day:</b> %{x}<br><b>Vehicles Uploaded At Least Once:</b> %{y}<extra></extra>",
                 )
@@ -1192,7 +1253,7 @@ if st.session_state["active_tab"] == 3:
                 title="Daily Uploaded Vehicles (At Least Once)",
                 xaxis_title="Day",
                 yaxis_title="Unique Onboarded Vehicle IDs",
-                template="plotly_white",
+                **PLOTLY_BRAND_LAYOUT,
                 autosize=True,
                 showlegend=False,
                 xaxis={"tickmode": "linear", "tick0": 1, "dtick": 1},
@@ -1217,7 +1278,7 @@ if st.session_state["active_tab"] == 3:
                 go.Bar(
                     x=day_presence["model"],
                     y=day_presence["count"],
-                    marker={"color": "#0f766e"},
+                    marker={"color": BOSCH_TURQUOISE},
                     text=day_presence["count"],
                     textposition="outside",
                     hovertemplate="<b>Model:</b> %{x}<br><b>Vehicles Present:</b> %{y}<extra></extra>",
@@ -1227,7 +1288,7 @@ if st.session_state["active_tab"] == 3:
                 title=f"Onboarded Vehicle IDs Present in Raw Data - Day {int(selected_presence_day)}",
                 xaxis_title="Model",
                 yaxis_title="Unique Vehicle IDs Present",
-                template="plotly_white",
+                **PLOTLY_BRAND_LAYOUT,
                 autosize=True,
                 showlegend=False,
                 margin={"l": 50, "r": 40, "t": 50, "b": 80},

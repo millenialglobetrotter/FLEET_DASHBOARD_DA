@@ -5,3 +5,10 @@ enableXsrfProtection = true
 
 [theme]
 base = "light"
+primaryColor = "#007bc0"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#eff1f2"
+textColor = "#000000"
+font = "sans serif"
+baseRadius = "none"
+buttonRadius = "none"
