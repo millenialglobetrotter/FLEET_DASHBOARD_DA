@@ -120,7 +120,7 @@ st.markdown(
         padding: 0;
     }
     .brand-header-spacer {
-        height: 160px;
+        height: 130px;
     }
     @media (max-width: 992px) {
         .block-container {
@@ -140,7 +140,7 @@ st.markdown(
             font-size: 0.88rem;
         }
         .brand-header-spacer {
-            height: 140px;
+            height: 110px;
         }
     }
     @media (max-width: 640px) {
@@ -166,7 +166,7 @@ st.markdown(
             margin-top: 0.1rem;
         }
         .brand-header-spacer {
-            height: 120px;
+            height: 90px;
         }
     }
     .brand-text {
@@ -1012,7 +1012,7 @@ if "onboarded_vehicle_details_map" not in st.session_state:
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
         st.session_state["onboarded_error"] = str(exc)
 
-st.markdown('<div style="height: 3rem;"></div>', unsafe_allow_html=True)
+st.markdown('<div style="height: 2rem;"></div>', unsafe_allow_html=True)
 
 if st.button("Refresh Data", use_container_width=False, type="primary"):
     with st.spinner("Refreshing recent hours..."):
