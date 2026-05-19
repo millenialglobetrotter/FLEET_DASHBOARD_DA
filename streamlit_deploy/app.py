@@ -80,7 +80,7 @@ st.markdown(
         font-family: Bosch Sans, Helvetica Neue, Helvetica, Arial, sans-serif !important;
     }
     .block-container {
-        padding: 0.35rem 1rem 0.5rem 1rem !important;
+        padding: 0.75rem 1rem 0.5rem 1rem !important;
         max-width: 100% !important;
     }
     .brand-header {
@@ -120,11 +120,11 @@ st.markdown(
         padding: 0;
     }
     .brand-header-spacer {
-        height: 72px;
+        height: 96px;
     }
     @media (max-width: 992px) {
         .block-container {
-            padding: 0.25rem 0.8rem 0.4rem 0.8rem !important;
+            padding: 0.6rem 0.8rem 0.4rem 0.8rem !important;
         }
         .brand-header {
             padding: 0.2rem 0.8rem 0.3rem 0.8rem;
@@ -140,12 +140,12 @@ st.markdown(
             font-size: 0.88rem;
         }
         .brand-header-spacer {
-            height: 64px;
+            height: 84px;
         }
     }
     @media (max-width: 640px) {
         .block-container {
-            padding: 0.2rem 0.65rem 0.35rem 0.65rem !important;
+            padding: 0.5rem 0.65rem 0.35rem 0.65rem !important;
         }
         .brand-header {
             padding: 0.15rem 0.65rem 0.25rem 0.65rem;
@@ -166,7 +166,7 @@ st.markdown(
             margin-top: 0.1rem;
         }
         .brand-header-spacer {
-            height: 52px;
+            height: 72px;
         }
     }
     .brand-text {
