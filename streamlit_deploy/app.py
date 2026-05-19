@@ -91,10 +91,11 @@ st.markdown(
         left: 0;
         right: 0;
         width: 100%;
-        z-index: 999;
+        z-index: 1000000;
         background: #ffffff;
         padding: 0.2rem 1rem 0.3rem 1rem;
         box-sizing: border-box;
+        border-bottom: 1px solid var(--bosch-gray-85);
     }
     .brand-supergraphic {
         width: 100vw;
@@ -255,6 +256,11 @@ st.markdown(
     }
     [data-testid="stTabs"] button {
         border-radius: 0 !important;
+    }
+    .stAppHeader,
+    header[data-testid="stHeader"],
+    [data-testid="stToolbar"] {
+        display: none !important;
     }
     footer {visibility: hidden;}
     </style>
