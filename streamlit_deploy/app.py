@@ -173,6 +173,16 @@ st.markdown(
             padding: 0.5rem 0.6rem;
             min-height: 72px;
         }
+        .onboarded-metric-card {
+            padding: 0.5rem 0.65rem;
+            min-height: 84px;
+        }
+        .onboarded-metric-title {
+            font-size: 0.78rem;
+        }
+        .onboarded-metric-value {
+            font-size: 1.55rem;
+        }
     }
     .brand-text {
         flex: 1;
@@ -200,22 +210,24 @@ st.markdown(
         background: #e2f5e7;
         border: 1px solid #86d7a2;
         border-radius: 0;
-        padding: 0.75rem 1rem;
+        padding: 0.55rem 0.75rem;
         width: 100%;
         box-sizing: border-box;
         margin: 0;
-        min-height: 104px;
+        min-height: 88px;
     }
     .onboarded-metric-title {
-        font-size: 0.95rem;
-        font-weight: 700;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
         color: #006c3a;
     }
     .onboarded-metric-value {
-        font-size: 2rem;
+        font-size: 1.7rem;
         font-weight: 800;
         color: #00512a;
-        line-height: 1.1;
+        line-height: 1;
     }
     [data-testid="stAppViewContainer"] {
         background: linear-gradient(180deg, #ffffff 0%, #f7f9fa 100%);
