@@ -171,6 +171,7 @@ st.markdown(
         .ux-subtle-box {
             margin-bottom: 0.45rem;
             padding: 0.5rem 0.6rem;
+            min-height: 72px;
         }
     }
     .brand-text {
@@ -236,7 +237,10 @@ st.markdown(
         background: #ffffff;
         padding: 0.6rem 0.75rem;
         margin: 0.2rem 0 0.75rem 0;
-        min-height: 76px;
+        min-height: 88px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
     .ux-subtle-title {
         font-size: 0.82rem;
@@ -253,6 +257,9 @@ st.markdown(
         color: #4e5256;
         font-size: 0.85rem;
         margin-top: 0.2rem;
+    }
+    .ux-section-gap {
+        height: 0.35rem;
     }
     .stButton button,
     .stDownloadButton button,
@@ -1165,21 +1172,36 @@ with summary_cols[2]:
         unsafe_allow_html=True,
     )
 
-# Tab selector with explicit active state for better navigation clarity.
-tab_labels = [
-    "📊 Daily Drill-down",
-    "🔥 Vehicles Live/Hour Heatmap",
-    "✅ Vehicles Result Processed",
-    "🧭 Onboarded Vehicles Drill Down",
+# Button-style tabs arranged in a 2x2 grid for better small-screen responsiveness.
+tab_items = [
+    ("📊 Daily Drill-down", 0, "tab_drill_down"),
+    ("🔥 Vehicles Live/Hour Heatmap", 1, "tab_heatmap"),
+    ("✅ Vehicles Result Processed", 2, "tab_processed"),
+    ("🧭 Onboarded Vehicles Drill Down", 3, "tab_onboarded"),
 ]
-selected_tab = st.radio(
-    "Dashboard view",
-    options=tab_labels,
-    index=st.session_state.get("active_tab", 0),
-    horizontal=True,
-    label_visibility="collapsed",
-)
-st.session_state["active_tab"] = tab_labels.index(selected_tab)
+tab_row_1 = st.columns(2)
+tab_row_2 = st.columns(2)
+for tab_col, (tab_label, tab_idx, tab_key) in zip(tab_row_1, tab_items[:2]):
+    with tab_col:
+        if st.button(
+            tab_label,
+            use_container_width=True,
+            key=tab_key,
+            type="primary" if st.session_state["active_tab"] == tab_idx else "secondary",
+        ):
+            st.session_state["active_tab"] = tab_idx
+for tab_col, (tab_label, tab_idx, tab_key) in zip(tab_row_2, tab_items[2:]):
+    with tab_col:
+        if st.button(
+            tab_label,
+            use_container_width=True,
+            key=tab_key,
+            type="primary" if st.session_state["active_tab"] == tab_idx else "secondary",
+        ):
+            st.session_state["active_tab"] = tab_idx
+
+st.markdown('<p class="ux-inline-help">Active tab stays highlighted for quicker navigation across desktop and mobile.</p>', unsafe_allow_html=True)
+st.markdown('<div class="ux-section-gap"></div>', unsafe_allow_html=True)
 
 st.divider()
 
@@ -1189,7 +1211,7 @@ if st.session_state["active_tab"] == 0:
     if "selected_day_input" not in st.session_state or st.session_state["selected_day_input"] not in available_days:
         st.session_state["selected_day_input"] = available_days[0]
 
-    day_label_col, day_select_col, day_prev_col, day_next_col = st.columns([0.12, 0.48, 0.2, 0.2])
+    day_label_col, day_select_col = st.columns([0.2, 0.8])
     with day_label_col:
         st.markdown("**Day**")
     with day_select_col:
@@ -1202,6 +1224,7 @@ if st.session_state["active_tab"] == 0:
         )
 
     selected_idx = available_days.index(st.session_state["selected_day_input"])
+    day_prev_col, day_next_col = st.columns(2)
     with day_prev_col:
         prev_disabled = selected_idx == 0
         if st.button("Previous", key="day_prev_button", use_container_width=True, disabled=prev_disabled):
@@ -1213,7 +1236,10 @@ if st.session_state["active_tab"] == 0:
             st.session_state["selected_day_input"] = available_days[selected_idx + 1]
             st.rerun()
 
-    st.markdown('<p class="ux-inline-help">Tip: use Previous/Next for faster day-by-day checks.</p>', unsafe_allow_html=True)
+    st.markdown(
+        f'<p class="ux-inline-help">Tip: use Previous/Next for faster day-by-day checks. ({selected_idx + 1} of {len(available_days)} days)</p>',
+        unsafe_allow_html=True,
+    )
 
     day_data = df_results_ist[df_results_ist["ist_day"] == selected_day].copy()
     if day_data.empty:
