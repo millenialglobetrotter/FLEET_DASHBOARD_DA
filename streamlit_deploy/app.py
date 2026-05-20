@@ -1150,6 +1150,7 @@ tab_items = [
 ]
 tab_row_1 = st.columns(2)
 tab_row_2 = st.columns(2)
+_tab_switched = False
 for tab_col, (tab_label, tab_idx, tab_key) in zip(tab_row_1, tab_items[:2]):
     with tab_col:
         if st.button(
@@ -1158,7 +1159,9 @@ for tab_col, (tab_label, tab_idx, tab_key) in zip(tab_row_1, tab_items[:2]):
             key=tab_key,
             type="primary" if st.session_state["active_tab"] == tab_idx else "secondary",
         ):
-            st.session_state["active_tab"] = tab_idx
+            if st.session_state["active_tab"] != tab_idx:
+                st.session_state["active_tab"] = tab_idx
+                _tab_switched = True
 for tab_col, (tab_label, tab_idx, tab_key) in zip(tab_row_2, tab_items[2:]):
     with tab_col:
         if st.button(
@@ -1167,7 +1170,11 @@ for tab_col, (tab_label, tab_idx, tab_key) in zip(tab_row_2, tab_items[2:]):
             key=tab_key,
             type="primary" if st.session_state["active_tab"] == tab_idx else "secondary",
         ):
-            st.session_state["active_tab"] = tab_idx
+            if st.session_state["active_tab"] != tab_idx:
+                st.session_state["active_tab"] = tab_idx
+                _tab_switched = True
+if _tab_switched:
+    st.rerun()
 
 st.divider()
 
