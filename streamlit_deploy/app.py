@@ -582,6 +582,30 @@ def _recent_days_for_lookback(year: int, month: int, lookback_hours: int = 24) -
     return sorted({t.day for t in [start, now] if t.year == year and t.month == month})
 
 
+def _expected_days_for_month(year: int, month: int) -> list[int]:
+    now = datetime.now()
+    if (year, month) > (now.year, now.month):
+        return []
+    _, num_days = calendar.monthrange(year, month)
+    last_day = now.day if (year == now.year and month == now.month) else num_days
+    return list(range(1, last_day + 1))
+
+
+def _missing_presence_days(presence_df: pd.DataFrame, year: int, month: int) -> list[int]:
+    expected_days = set(_expected_days_for_month(year, month))
+    if not expected_days:
+        return []
+    if presence_df.empty or "day" not in presence_df.columns:
+        return sorted(expected_days)
+
+    present_days = {
+        int(day)
+        for day in presence_df["day"].dropna().unique().tolist()
+        if str(day).strip() != ""
+    }
+    return sorted(expected_days.difference(present_days))
+
+
 def fetch_onboarded_model_presence_for_days(
     sas_url: str,
     container_name: str,
@@ -766,6 +790,71 @@ def merge_model_daily_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.
     return base.reset_index().sort_values(keys).reset_index(drop=True)
 
 
+def refresh_onboarded_cache_for_month(
+    sas_url: str,
+    container_name: str,
+    year: int,
+    month: int,
+    force_full: bool = False,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    vehicle_model_map = st.session_state.get("onboarded_vehicle_model_map", {})
+    vehicle_details_map = st.session_state.get("onboarded_vehicle_details_map", {})
+    if not vehicle_model_map or not vehicle_details_map:
+        return pd.DataFrame(), pd.DataFrame()
+
+    current_presence = st.session_state.get("onboarded_presence_df", pd.DataFrame())
+    if force_full or current_presence.empty:
+        presence_df = fetch_onboarded_model_presence_for_month(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            vehicle_model_map,
+        )
+    else:
+        presence_df = current_presence.copy()
+
+    missing_days = _missing_presence_days(presence_df, int(year), int(month))
+    if missing_days:
+        missing_updates = fetch_onboarded_model_presence_for_days(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            vehicle_model_map,
+            missing_days,
+        )
+        presence_df = merge_model_daily_data(presence_df, missing_updates)
+
+    recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=24)
+    if recent_days:
+        recent_updates = fetch_onboarded_model_presence_for_days(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            vehicle_model_map,
+            recent_days,
+        )
+        presence_df = merge_model_daily_data(presence_df, recent_updates)
+
+    vehicle_hours_df = st.session_state.get("onboarded_vehicle_hours_df", pd.DataFrame())
+    if force_full or vehicle_hours_df.empty:
+        vehicle_hours_df = fetch_onboarded_vehicle_hours_for_month(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            vehicle_details_map,
+        )
+
+    st.session_state["onboarded_presence_df"] = presence_df
+    st.session_state["onboarded_vehicle_hours_df"] = vehicle_hours_df
+    st.session_state["onboarded_tab_load_key"] = f"{int(year)}-{int(month):02d}"
+
+    return presence_df, vehicle_hours_df
+
+
 def fetch_processed_model_vehicleids_for_day(
     sas_url: str,
     container_name: str,
@@ -870,6 +959,9 @@ with st.sidebar:
         st.caption("Gist cache: missing GITHUB_GIST_ID/GITHUB_GIST_TOKEN")
     if st.session_state.get("gist_cache_error"):
         st.caption(f"Gist cache error: {st.session_state['gist_cache_error']}")
+    presence_dbg = st.session_state.get("onboarded_presence_df", pd.DataFrame())
+    if not presence_dbg.empty and "day" in presence_dbg.columns:
+        st.caption(f"Onboarded presence cached through day: {int(presence_dbg['day'].max())}")
     if not default_sas or not default_container:
         st.warning("⚠️ SAS_URL and/or CONTAINER_NAME not configured in secrets. Please enter them above.")
         st.caption("Tip: Set SAS_URL and CONTAINER_NAME in Streamlit secrets for permanent prefill.")
@@ -1107,6 +1199,31 @@ if "onboarded_vehicle_details_map" not in st.session_state:
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
         st.session_state["onboarded_error"] = str(exc)
 
+# One-time month repair: backfill any missing onboarded presence days in cache.
+onboarded_repair_key = f"{container_name}|{int(year)}-{int(month):02d}"
+if st.session_state.get("onboarded_repair_key") != onboarded_repair_key:
+    try:
+        repaired_presence_df, repaired_vehicle_hours_df = refresh_onboarded_cache_for_month(
+            sas_url,
+            container_name,
+            int(year),
+            int(month),
+            force_full=False,
+        )
+        if not repaired_presence_df.empty:
+            save_cached_datasets(
+                container_name,
+                int(year),
+                int(month),
+                st.session_state.get("df_results", pd.DataFrame()),
+                st.session_state.get("df_processed", pd.DataFrame()),
+                repaired_presence_df,
+                repaired_vehicle_hours_df,
+            )
+        st.session_state["onboarded_repair_key"] = onboarded_repair_key
+    except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+        st.session_state["onboarded_error"] = str(exc)
+
 st.markdown('<div style="height: 0.35rem;"></div>', unsafe_allow_html=True)
 
 top_left_col, metric_col = st.columns([0.5, 0.5])
@@ -1137,9 +1254,13 @@ with top_left_col:
                     st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
                     st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
                     st.session_state["onboarded_vehicle_details_map"] = onboarded_summary.get("vehicle_details_map", {})
-                    st.session_state.pop("onboarded_presence_df", None)
-                    st.session_state.pop("onboarded_vehicle_hours_df", None)
-                    st.session_state.pop("onboarded_tab_load_key", None)
+                    refreshed_presence_df, refreshed_vehicle_hours_df = refresh_onboarded_cache_for_month(
+                        sas_url,
+                        container_name,
+                        int(year),
+                        int(month),
+                        force_full=False,
+                    )
                     st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     st.session_state.pop("onboarded_error", None)
                     # Persist updated onboarded data to shared cache immediately.
@@ -1149,8 +1270,8 @@ with top_left_col:
                         int(month),
                         st.session_state["df_results"],
                         st.session_state["df_processed"],
-                        st.session_state.get("onboarded_presence_df", pd.DataFrame()),
-                        st.session_state.get("onboarded_vehicle_hours_df", pd.DataFrame()),
+                        refreshed_presence_df,
+                        refreshed_vehicle_hours_df,
                     )
                 except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
                     st.error(f"Unable to refresh recent hours: {exc}")
