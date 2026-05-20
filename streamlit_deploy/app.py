@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 from urllib import error as urlerror
+from urllib import request as urlrequest
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -21,6 +22,7 @@ from utils import (
     load_local_config,
     first_non_empty,
     get_secret_keys,
+    http_json,
 )
 from data_fetchers import (
     fetch_onboarded_vehicle_summary,
@@ -382,7 +384,7 @@ def _gist_credentials() -> tuple[str, str]:
 def _gist_read_file(gist_id: str, token: str, filename: str) -> str | None:
     """Fetch a single file's content from a GitHub Gist. Returns None on any failure."""
     try:
-        response = _http_json(
+        response = http_json(
             f"https://api.github.com/gists/{gist_id}",
             headers={"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"},
             timeout=15,
@@ -407,7 +409,7 @@ def _gist_save_files(gist_id: str, token: str, files: dict[str, str]) -> bool:
     """PATCH a GitHub Gist with the given {filename: content} dict. Returns True on success."""
     try:
         payload = {"files": {name: {"content": content} for name, content in files.items()}}
-        _http_json(
+        http_json(
             f"https://api.github.com/gists/{gist_id}",
             method="PATCH",
             headers={"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"},
@@ -434,44 +436,26 @@ def load_cached_datasets(container_name: str, year: int, month: int):
             return pd.DataFrame()
 
     gist_id, gist_token = _gist_credentials()
-    if gist_id and gist_token:
-        raw_content = _gist_read_file(gist_id, gist_token, f"raw_{key}.csv")
-        processed_content = _gist_read_file(gist_id, gist_token, f"processed_{key}.csv")
-        presence_content = _gist_read_file(gist_id, gist_token, f"presence_{key}.csv")
-        vehicle_hours_content = _gist_read_file(gist_id, gist_token, f"vehicle_hours_{key}.csv")
-        meta_content = _gist_read_file(gist_id, gist_token, f"meta_{key}.json")
-        if raw_content:
-            raw_df = _safe_read_csv(raw_content)
-        if processed_content:
-            processed_df = _safe_read_csv(processed_content)
-        if presence_content:
-            presence_df = _safe_read_csv(presence_content)
-        if vehicle_hours_content:
-            vehicle_hours_df = _safe_read_csv(vehicle_hours_content)
-        if meta_content:
-            try:
-                cached_at = json.loads(meta_content).get("cached_at")
-            except Exception:
-                cached_at = None
+    if not gist_id or not gist_token:
         return raw_df, processed_df, presence_df, vehicle_hours_df, cached_at
 
-    # Fallback: local file cache
-    raw_path, processed_path, meta_path = _cache_paths(container_name, year, month)
-    presence_path = CACHE_DIR / f"presence_{key}.csv"
-    vehicle_hours_path = CACHE_DIR / f"vehicle_hours_{key}.csv"
-    if raw_path.exists():
-        raw_df = pd.read_csv(raw_path)
-    if processed_path.exists():
-        processed_df = pd.read_csv(processed_path)
-    if presence_path.exists():
-        presence_df = pd.read_csv(presence_path)
-    if vehicle_hours_path.exists():
-        vehicle_hours_df = pd.read_csv(vehicle_hours_path)
-    if meta_path.exists():
+    raw_content = _gist_read_file(gist_id, gist_token, f"raw_{key}.csv")
+    processed_content = _gist_read_file(gist_id, gist_token, f"processed_{key}.csv")
+    presence_content = _gist_read_file(gist_id, gist_token, f"presence_{key}.csv")
+    vehicle_hours_content = _gist_read_file(gist_id, gist_token, f"vehicle_hours_{key}.csv")
+    meta_content = _gist_read_file(gist_id, gist_token, f"meta_{key}.json")
+    if raw_content:
+        raw_df = _safe_read_csv(raw_content)
+    if processed_content:
+        processed_df = _safe_read_csv(processed_content)
+    if presence_content:
+        presence_df = _safe_read_csv(presence_content)
+    if vehicle_hours_content:
+        vehicle_hours_df = _safe_read_csv(vehicle_hours_content)
+    if meta_content:
         try:
-            with open(meta_path, "r", encoding="utf-8") as meta_file:
-                cached_at = json.load(meta_file).get("cached_at")
-        except (OSError, json.JSONDecodeError):
+            cached_at = json.loads(meta_content).get("cached_at")
+        except Exception:
             cached_at = None
     return raw_df, processed_df, presence_df, vehicle_hours_df, cached_at
 
@@ -491,30 +475,19 @@ def save_cached_datasets(
     vehicle_hours_df = vehicle_hours_df if vehicle_hours_df is not None else pd.DataFrame()
 
     gist_id, gist_token = _gist_credentials()
-    if gist_id and gist_token:
-        files = {
-            f"raw_{key}.csv": raw_df.to_csv(index=False),
-            f"processed_{key}.csv": processed_df.to_csv(index=False),
-            f"meta_{key}.json": json.dumps({"cached_at": now_str}),
-        }
-        if not presence_df.empty:
-            files[f"presence_{key}.csv"] = presence_df.to_csv(index=False)
-        if not vehicle_hours_df.empty:
-            files[f"vehicle_hours_{key}.csv"] = vehicle_hours_df.to_csv(index=False)
-        _gist_save_files(gist_id, gist_token, files)
+    if not gist_id or not gist_token:
         return
 
-    # Fallback: local file cache
-    raw_path, processed_path, meta_path = _cache_paths(container_name, year, month)
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    raw_df.to_csv(raw_path, index=False)
-    processed_df.to_csv(processed_path, index=False)
+    files = {
+        f"raw_{key}.csv": raw_df.to_csv(index=False),
+        f"processed_{key}.csv": processed_df.to_csv(index=False),
+        f"meta_{key}.json": json.dumps({"cached_at": now_str}),
+    }
     if not presence_df.empty:
-        (CACHE_DIR / f"presence_{key}.csv").write_text(presence_df.to_csv(index=False), encoding="utf-8")
+        files[f"presence_{key}.csv"] = presence_df.to_csv(index=False)
     if not vehicle_hours_df.empty:
-        (CACHE_DIR / f"vehicle_hours_{key}.csv").write_text(vehicle_hours_df.to_csv(index=False), encoding="utf-8")
-    with open(meta_path, "w", encoding="utf-8") as meta_file:
-        json.dump({"cached_at": now_str}, meta_file)
+        files[f"vehicle_hours_{key}.csv"] = vehicle_hours_df.to_csv(index=False)
+    _gist_save_files(gist_id, gist_token, files)
 
 
 def is_cache_stale(cached_at: str, max_age_minutes: int = 15) -> bool:
