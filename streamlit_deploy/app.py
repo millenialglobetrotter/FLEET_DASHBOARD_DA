@@ -1639,26 +1639,53 @@ if st.session_state["active_tab"] == 3:
             day_presence = day_presence.sort_values("count", ascending=False)
 
             st.caption("Bar chart: model-wise onboarded vehicle IDs that uploaded at least once on selected day.")
-            fig_presence = go.Figure()
-            fig_presence.add_trace(
-                go.Bar(
-                    x=day_presence["model"],
-                    y=day_presence["count"],
-                    marker={"color": BOSCH_TURQUOISE},
-                    text=day_presence["count"],
-                    textposition="outside",
-                    hovertemplate="<b>Model:</b> %{x}<br><b>Vehicles Present:</b> %{y}<extra></extra>",
+            _n_models = len(day_presence)
+            _bar_height = max(420, _n_models * 28)
+            # Use horizontal bars when there are many models so all labels are visible.
+            if _n_models > 10:
+                fig_presence = go.Figure()
+                fig_presence.add_trace(
+                    go.Bar(
+                        x=day_presence["count"],
+                        y=day_presence["model"],
+                        orientation="h",
+                        marker={"color": BOSCH_TURQUOISE},
+                        text=day_presence["count"],
+                        textposition="outside",
+                        hovertemplate="<b>Model:</b> %{y}<br><b>Vehicles Present:</b> %{x}<extra></extra>",
+                    )
                 )
-            )
-            fig_presence.update_layout(
-                title=f"Onboarded Vehicle IDs Present in Raw Data - Day {int(selected_presence_day)}",
-                xaxis_title="Model",
-                yaxis_title="Unique Vehicle IDs Present",
-                **PLOTLY_BRAND_LAYOUT,
-                autosize=True,
-                showlegend=False,
-                margin={"l": 50, "r": 40, "t": 50, "b": 80},
-            )
+                fig_presence.update_layout(
+                    title=f"Onboarded Vehicle IDs Present in Raw Data - Day {int(selected_presence_day)}",
+                    xaxis_title="Unique Vehicle IDs Present",
+                    yaxis_title="Model",
+                    **PLOTLY_BRAND_LAYOUT,
+                    height=_bar_height,
+                    showlegend=False,
+                    yaxis={"autorange": "reversed", "tickfont": {"size": 11}},
+                    margin={"l": 160, "r": 60, "t": 50, "b": 50},
+                )
+            else:
+                fig_presence = go.Figure()
+                fig_presence.add_trace(
+                    go.Bar(
+                        x=day_presence["model"],
+                        y=day_presence["count"],
+                        marker={"color": BOSCH_TURQUOISE},
+                        text=day_presence["count"],
+                        textposition="outside",
+                        hovertemplate="<b>Model:</b> %{x}<br><b>Vehicles Present:</b> %{y}<extra></extra>",
+                    )
+                )
+                fig_presence.update_layout(
+                    title=f"Onboarded Vehicle IDs Present in Raw Data - Day {int(selected_presence_day)}",
+                    xaxis_title="Model",
+                    yaxis_title="Unique Vehicle IDs Present",
+                    **PLOTLY_BRAND_LAYOUT,
+                    showlegend=False,
+                    xaxis={"tickangle": -35, "tickfont": {"size": 11}},
+                    margin={"l": 50, "r": 40, "t": 50, "b": 120},
+                )
             st.plotly_chart(fig_presence, use_container_width=True)
 
             st.divider()
