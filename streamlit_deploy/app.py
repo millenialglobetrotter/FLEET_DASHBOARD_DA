@@ -410,56 +410,85 @@ def load_cached_datasets(container_name: str, year: int, month: int):
     key = _safe_cache_key(container_name, year, month)
     raw_df = pd.DataFrame()
     processed_df = pd.DataFrame()
+    presence_df = pd.DataFrame()
+    vehicle_hours_df = pd.DataFrame()
     cached_at = None
+
+    def _safe_read_csv(content):
+        try:
+            return pd.read_csv(io.StringIO(content))
+        except Exception:
+            return pd.DataFrame()
 
     gist_id, gist_token = _gist_credentials()
     if gist_id and gist_token:
         raw_content = _gist_read_file(gist_id, gist_token, f"raw_{key}.csv")
         processed_content = _gist_read_file(gist_id, gist_token, f"processed_{key}.csv")
+        presence_content = _gist_read_file(gist_id, gist_token, f"presence_{key}.csv")
+        vehicle_hours_content = _gist_read_file(gist_id, gist_token, f"vehicle_hours_{key}.csv")
         meta_content = _gist_read_file(gist_id, gist_token, f"meta_{key}.json")
         if raw_content:
-            try:
-                raw_df = pd.read_csv(io.StringIO(raw_content))
-            except Exception:
-                raw_df = pd.DataFrame()
+            raw_df = _safe_read_csv(raw_content)
         if processed_content:
-            try:
-                processed_df = pd.read_csv(io.StringIO(processed_content))
-            except Exception:
-                processed_df = pd.DataFrame()
+            processed_df = _safe_read_csv(processed_content)
+        if presence_content:
+            presence_df = _safe_read_csv(presence_content)
+        if vehicle_hours_content:
+            vehicle_hours_df = _safe_read_csv(vehicle_hours_content)
         if meta_content:
             try:
                 cached_at = json.loads(meta_content).get("cached_at")
             except Exception:
                 cached_at = None
-        return raw_df, processed_df, cached_at
+        return raw_df, processed_df, presence_df, vehicle_hours_df, cached_at
 
     # Fallback: local file cache
     raw_path, processed_path, meta_path = _cache_paths(container_name, year, month)
+    presence_path = CACHE_DIR / f"presence_{key}.csv"
+    vehicle_hours_path = CACHE_DIR / f"vehicle_hours_{key}.csv"
     if raw_path.exists():
         raw_df = pd.read_csv(raw_path)
     if processed_path.exists():
         processed_df = pd.read_csv(processed_path)
+    if presence_path.exists():
+        presence_df = pd.read_csv(presence_path)
+    if vehicle_hours_path.exists():
+        vehicle_hours_df = pd.read_csv(vehicle_hours_path)
     if meta_path.exists():
         try:
             with open(meta_path, "r", encoding="utf-8") as meta_file:
                 cached_at = json.load(meta_file).get("cached_at")
         except (OSError, json.JSONDecodeError):
             cached_at = None
-    return raw_df, processed_df, cached_at
+    return raw_df, processed_df, presence_df, vehicle_hours_df, cached_at
 
 
-def save_cached_datasets(container_name: str, year: int, month: int, raw_df: pd.DataFrame, processed_df: pd.DataFrame):
+def save_cached_datasets(
+    container_name: str,
+    year: int,
+    month: int,
+    raw_df: pd.DataFrame,
+    processed_df: pd.DataFrame,
+    presence_df: pd.DataFrame | None = None,
+    vehicle_hours_df: pd.DataFrame | None = None,
+):
     key = _safe_cache_key(container_name, year, month)
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    presence_df = presence_df if presence_df is not None else pd.DataFrame()
+    vehicle_hours_df = vehicle_hours_df if vehicle_hours_df is not None else pd.DataFrame()
 
     gist_id, gist_token = _gist_credentials()
     if gist_id and gist_token:
-        _gist_save_files(gist_id, gist_token, {
+        files = {
             f"raw_{key}.csv": raw_df.to_csv(index=False),
             f"processed_{key}.csv": processed_df.to_csv(index=False),
             f"meta_{key}.json": json.dumps({"cached_at": now_str}),
-        })
+        }
+        if not presence_df.empty:
+            files[f"presence_{key}.csv"] = presence_df.to_csv(index=False)
+        if not vehicle_hours_df.empty:
+            files[f"vehicle_hours_{key}.csv"] = vehicle_hours_df.to_csv(index=False)
+        _gist_save_files(gist_id, gist_token, files)
         return
 
     # Fallback: local file cache
@@ -467,6 +496,10 @@ def save_cached_datasets(container_name: str, year: int, month: int, raw_df: pd.
     os.makedirs(CACHE_DIR, exist_ok=True)
     raw_df.to_csv(raw_path, index=False)
     processed_df.to_csv(processed_path, index=False)
+    if not presence_df.empty:
+        (CACHE_DIR / f"presence_{key}.csv").write_text(presence_df.to_csv(index=False), encoding="utf-8")
+    if not vehicle_hours_df.empty:
+        (CACHE_DIR / f"vehicle_hours_{key}.csv").write_text(vehicle_hours_df.to_csv(index=False), encoding="utf-8")
     with open(meta_path, "w", encoding="utf-8") as meta_file:
         json.dump({"cached_at": now_str}, meta_file)
 
@@ -990,11 +1023,17 @@ stored_key = st.session_state.get("dataset_key")
 if stored_key != current_key or "df_results" not in st.session_state:
     with st.spinner("Loading shared cache..."):
         try:
-            cached_raw, cached_processed, cached_at = load_cached_datasets(container_name, int(year), int(month))
+            cached_raw, cached_processed, cached_presence, cached_vehicle_hours, cached_at = load_cached_datasets(container_name, int(year), int(month))
             if not cached_raw.empty and not cached_processed.empty:
                 st.session_state["df_results"] = cached_raw
                 st.session_state["df_processed"] = cached_processed
                 st.session_state["cache_loaded_at"] = cached_at
+                # Seed onboarded tab data from cache if available — avoids slow Azure fetch on first open.
+                if not cached_presence.empty:
+                    st.session_state["onboarded_presence_df"] = cached_presence
+                    st.session_state["onboarded_tab_load_key"] = f"{int(year)}-{int(month):02d}"
+                if not cached_vehicle_hours.empty:
+                    st.session_state["onboarded_vehicle_hours_df"] = cached_vehicle_hours
             else:
                 st.session_state["df_results"] = count_vehicles_per_hour_for_month(
                     sas_url, container_name, int(year), int(month)
@@ -1092,6 +1131,16 @@ with top_left_col:
                     st.session_state.pop("onboarded_tab_load_key", None)
                     st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     st.session_state.pop("onboarded_error", None)
+                    # Persist updated onboarded data to shared cache immediately.
+                    save_cached_datasets(
+                        container_name,
+                        int(year),
+                        int(month),
+                        st.session_state["df_results"],
+                        st.session_state["df_processed"],
+                        st.session_state.get("onboarded_presence_df", pd.DataFrame()),
+                        st.session_state.get("onboarded_vehicle_hours_df", pd.DataFrame()),
+                    )
                 except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
                     st.error(f"Unable to refresh recent hours: {exc}")
                     st.session_state["onboarded_error"] = str(exc)
@@ -1416,37 +1465,58 @@ if st.session_state["active_tab"] == 2:
 # Tab 3: Onboarded Drill-down
 if st.session_state["active_tab"] == 3:
     onboarded_tab_load_key = f"{int(year)}-{int(month):02d}"
-    if st.session_state.get("onboarded_tab_load_key") != onboarded_tab_load_key:
-        try:
-            presence_df_month = fetch_onboarded_model_presence_for_month(
-                sas_url,
-                container_name,
-                int(year),
-                int(month),
-                st.session_state.get("onboarded_vehicle_model_map", {}),
-            )
-            recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=24)
-            presence_updates = fetch_onboarded_model_presence_for_days(
-                sas_url,
-                container_name,
-                int(year),
-                int(month),
-                st.session_state.get("onboarded_vehicle_model_map", {}),
-                recent_days,
-            )
-            st.session_state["onboarded_presence_df"] = merge_model_daily_data(presence_df_month, presence_updates)
-            st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
-                sas_url,
-                container_name,
-                int(year),
-                int(month),
-                st.session_state.get("onboarded_vehicle_details_map", {}),
-            )
-            st.session_state["onboarded_tab_load_key"] = onboarded_tab_load_key
-            st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            st.session_state.pop("onboarded_error", None)
-        except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-            st.session_state["onboarded_error"] = str(exc)
+    _has_cached_onboarded = (
+        not st.session_state.get("onboarded_presence_df", pd.DataFrame()).empty
+        and not st.session_state.get("onboarded_vehicle_hours_df", pd.DataFrame()).empty
+    )
+    _needs_live_fetch = st.session_state.get("onboarded_tab_load_key") != onboarded_tab_load_key
+
+    if _needs_live_fetch and not _has_cached_onboarded:
+        # No cache available — must fetch from Azure (first time for this month).
+        with st.spinner("Loading onboarded vehicle data for the first time — this may take a minute…"):
+            try:
+                presence_df_month = fetch_onboarded_model_presence_for_month(
+                    sas_url,
+                    container_name,
+                    int(year),
+                    int(month),
+                    st.session_state.get("onboarded_vehicle_model_map", {}),
+                )
+                recent_days = _recent_days_for_lookback(int(year), int(month), lookback_hours=24)
+                presence_updates = fetch_onboarded_model_presence_for_days(
+                    sas_url,
+                    container_name,
+                    int(year),
+                    int(month),
+                    st.session_state.get("onboarded_vehicle_model_map", {}),
+                    recent_days,
+                )
+                st.session_state["onboarded_presence_df"] = merge_model_daily_data(presence_df_month, presence_updates)
+                st.session_state["onboarded_vehicle_hours_df"] = fetch_onboarded_vehicle_hours_for_month(
+                    sas_url,
+                    container_name,
+                    int(year),
+                    int(month),
+                    st.session_state.get("onboarded_vehicle_details_map", {}),
+                )
+                st.session_state["onboarded_tab_load_key"] = onboarded_tab_load_key
+                st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state.pop("onboarded_error", None)
+                # Save newly fetched data to shared cache.
+                save_cached_datasets(
+                    container_name,
+                    int(year),
+                    int(month),
+                    st.session_state.get("df_results", pd.DataFrame()),
+                    st.session_state.get("df_processed", pd.DataFrame()),
+                    st.session_state["onboarded_presence_df"],
+                    st.session_state["onboarded_vehicle_hours_df"],
+                )
+            except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+                st.session_state["onboarded_error"] = str(exc)
+    elif _needs_live_fetch and _has_cached_onboarded:
+        # Cached data available — mark as loaded and silently accept stale data until next Refresh.
+        st.session_state["onboarded_tab_load_key"] = onboarded_tab_load_key
 
     st.caption("Shows onboarded fleet composition and daily raw-data upload presence using vehicle registry mapping.")
     model_df = st.session_state.get("onboarded_model_counts", pd.DataFrame())
