@@ -1059,7 +1059,7 @@ if "onboarded_vehicle_details_map" not in st.session_state:
 
 st.markdown('<div style="height: 0.35rem;"></div>', unsafe_allow_html=True)
 
-top_left_col, metric_col = st.columns([0.66, 0.34])
+top_left_col, metric_col = st.columns([0.5, 0.5])
 with top_left_col:
     action_col, status_col = st.columns([0.32, 0.68])
     with action_col:
@@ -1141,39 +1141,6 @@ if (int(year), int(month)) == (now_ist.year, now_ist.month):
 if "active_tab" not in st.session_state:
     st.session_state["active_tab"] = 0
 
-summary_cols = st.columns(3)
-with summary_cols[0]:
-    st.markdown(
-        f"""
-        <div class="ux-subtle-box">
-            <p class="ux-subtle-title">Selected period</p>
-            <p class="ux-subtle-value">{calendar.month_name[int(month)]} {int(year)}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-with summary_cols[1]:
-    st.markdown(
-        f"""
-        <div class="ux-subtle-box">
-            <p class="ux-subtle-title">Days with live data</p>
-            <p class="ux-subtle-value">{len(available_days)}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-with summary_cols[2]:
-    peak_live = int(df_results_ist["vehicle_count"].max()) if not df_results_ist.empty else 0
-    st.markdown(
-        f"""
-        <div class="ux-subtle-box">
-            <p class="ux-subtle-title">Peak live vehicles/hour</p>
-            <p class="ux-subtle-value">{peak_live}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
 # Button-style tabs arranged in a 2x2 grid for better small-screen responsiveness.
 tab_items = [
     ("📊 Daily Drill-down", 0, "tab_drill_down"),
@@ -1201,9 +1168,6 @@ for tab_col, (tab_label, tab_idx, tab_key) in zip(tab_row_2, tab_items[2:]):
             type="primary" if st.session_state["active_tab"] == tab_idx else "secondary",
         ):
             st.session_state["active_tab"] = tab_idx
-
-st.markdown('<p class="ux-inline-help">Active tab stays highlighted for quicker navigation across desktop and mobile.</p>', unsafe_allow_html=True)
-st.markdown('<div class="ux-section-gap"></div>', unsafe_allow_html=True)
 
 st.divider()
 
