@@ -203,7 +203,8 @@ st.markdown(
         padding: 0.75rem 1rem;
         width: 100%;
         box-sizing: border-box;
-        margin: 0.25rem 0 0.75rem 0;
+        margin: 0;
+        min-height: 104px;
     }
     .onboarded-metric-title {
         font-size: 0.95rem;
@@ -1056,54 +1057,55 @@ if "onboarded_vehicle_details_map" not in st.session_state:
     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
         st.session_state["onboarded_error"] = str(exc)
 
-st.markdown('<div style="height: 2rem;"></div>', unsafe_allow_html=True)
+st.markdown('<div style="height: 0.35rem;"></div>', unsafe_allow_html=True)
 
-refresh_col, status_col = st.columns([0.22, 0.78])
-with refresh_col:
-    if st.button("Refresh Data", use_container_width=True, type="primary"):
-        with st.spinner("Refreshing recent hours..."):
-            try:
-                recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
-                recent_processed = fetch_recent_processed_days(
-                    sas_url, container_name, int(year), int(month), lookback_hours=24
-                )
-                st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
-                st.session_state["df_processed"] = merge_daily_data(st.session_state["df_processed"], recent_processed)
-                save_cached_datasets(
-                    container_name,
-                    int(year),
-                    int(month),
-                    st.session_state["df_results"],
-                    st.session_state["df_processed"],
-                )
-                st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                onboarded_summary = fetch_onboarded_vehicle_summary(make_filter="SML")
-                st.session_state["total_vehicles_onboarded"] = onboarded_summary["total"]
-                st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
-                st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
-                st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
-                st.session_state["onboarded_vehicle_details_map"] = onboarded_summary.get("vehicle_details_map", {})
-                st.session_state.pop("onboarded_presence_df", None)
-                st.session_state.pop("onboarded_vehicle_hours_df", None)
-                st.session_state.pop("onboarded_tab_load_key", None)
-                st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.session_state.pop("onboarded_error", None)
-            except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-                st.error(f"Unable to refresh recent hours: {exc}")
-                st.session_state["onboarded_error"] = str(exc)
-with status_col:
-    if "last_refresh" in st.session_state:
-        st.caption(f"Last refresh: {st.session_state['last_refresh']} (last 24 hours)")
-    if "cache_loaded_at" in st.session_state:
-        st.caption(f"Shared cache updated at: {st.session_state['cache_loaded_at']}")
+top_left_col, metric_col = st.columns([0.66, 0.34])
+with top_left_col:
+    action_col, status_col = st.columns([0.32, 0.68])
+    with action_col:
+        if st.button("Refresh Data", use_container_width=True, type="primary"):
+            with st.spinner("Refreshing recent hours..."):
+                try:
+                    recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
+                    recent_processed = fetch_recent_processed_days(
+                        sas_url, container_name, int(year), int(month), lookback_hours=24
+                    )
+                    st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
+                    st.session_state["df_processed"] = merge_daily_data(st.session_state["df_processed"], recent_processed)
+                    save_cached_datasets(
+                        container_name,
+                        int(year),
+                        int(month),
+                        st.session_state["df_results"],
+                        st.session_state["df_processed"],
+                    )
+                    st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    onboarded_summary = fetch_onboarded_vehicle_summary(make_filter="SML")
+                    st.session_state["total_vehicles_onboarded"] = onboarded_summary["total"]
+                    st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
+                    st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
+                    st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
+                    st.session_state["onboarded_vehicle_details_map"] = onboarded_summary.get("vehicle_details_map", {})
+                    st.session_state.pop("onboarded_presence_df", None)
+                    st.session_state.pop("onboarded_vehicle_hours_df", None)
+                    st.session_state.pop("onboarded_tab_load_key", None)
+                    st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    st.session_state.pop("onboarded_error", None)
+                except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+                    st.error(f"Unable to refresh recent hours: {exc}")
+                    st.session_state["onboarded_error"] = str(exc)
 
-info_col, metric_col = st.columns([0.65, 0.35])
-with info_col:
-    if "onboarded_last_updated" in st.session_state:
-        st.caption(f"Onboarded count last updated at: {st.session_state['onboarded_last_updated']}")
-    if "onboarded_error" in st.session_state:
-        st.caption(f"Onboarded count error: {st.session_state['onboarded_error']}")
+    with status_col:
+        if "last_refresh" in st.session_state:
+            st.caption(f"Last refresh: {st.session_state['last_refresh']} (24h sync)")
+        if "cache_loaded_at" in st.session_state:
+            st.caption(f"Shared cache: {st.session_state['cache_loaded_at']}")
+        if "onboarded_last_updated" in st.session_state:
+            st.caption(f"Onboarded count: {st.session_state['onboarded_last_updated']}")
+        if "onboarded_error" in st.session_state:
+            st.caption(f"Onboarded sync error: {st.session_state['onboarded_error']}")
+
 with metric_col:
     total_onboarded = st.session_state.get("total_vehicles_onboarded", "N/A")
     st.markdown(
@@ -1116,7 +1118,7 @@ with metric_col:
         unsafe_allow_html=True,
     )
 
-st.markdown('<div style="height:0.5rem;"></div>', unsafe_allow_html=True)
+st.markdown('<div style="height:0.2rem;"></div>', unsafe_allow_html=True)
 
 df_results = st.session_state["df_results"]
 
