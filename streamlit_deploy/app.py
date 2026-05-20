@@ -606,6 +606,87 @@ def _missing_presence_days(presence_df: pd.DataFrame, year: int, month: int) -> 
     return sorted(expected_days.difference(present_days))
 
 
+def _days_requiring_presence_refresh(presence_df: pd.DataFrame, year: int, month: int) -> list[int]:
+    """Return days that still need a live fetch (missing or placeholder-only rows)."""
+    expected_days = _expected_days_for_month(year, month)
+    if not expected_days:
+        return []
+    if presence_df.empty or "day" not in presence_df.columns:
+        return expected_days
+
+    working = presence_df.copy()
+    working["day_num"] = pd.to_numeric(working["day"], errors="coerce")
+    if "model" in working.columns:
+        working["model_norm"] = working["model"].astype(str).str.strip().str.lower()
+    else:
+        working["model_norm"] = ""
+    if "count" in working.columns:
+        working["count_num"] = pd.to_numeric(working["count"], errors="coerce").fillna(0)
+    else:
+        working["count_num"] = 0
+
+    needs_refresh = []
+    for day in expected_days:
+        day_rows = working[working["day_num"] == int(day)]
+        if day_rows.empty:
+            needs_refresh.append(int(day))
+            continue
+
+        real_rows = day_rows[day_rows["model_norm"] != "no uploads"]
+        if real_rows.empty:
+            needs_refresh.append(int(day))
+            continue
+
+        if not (real_rows["count_num"] > 0).any():
+            needs_refresh.append(int(day))
+
+    return needs_refresh
+
+
+def _drop_no_upload_placeholders_when_real_data_exists(presence_df: pd.DataFrame) -> pd.DataFrame:
+    """Remove synthetic 'No Uploads' rows for days where real model rows now exist."""
+    if presence_df.empty or "day" not in presence_df.columns or "model" not in presence_df.columns:
+        return presence_df
+
+    working = presence_df.copy()
+    working["_day_num"] = pd.to_numeric(working["day"], errors="coerce")
+    working["_model_norm"] = working["model"].astype(str).str.strip().str.lower()
+    if "count" in working.columns:
+        working["_count_num"] = pd.to_numeric(working["count"], errors="coerce").fillna(0)
+    else:
+        working["_count_num"] = 0
+
+    real_days = set(
+        working.loc[
+            (working["_model_norm"] != "no uploads") & (working["_count_num"] > 0),
+            "_day_num",
+        ]
+        .dropna()
+        .astype(int)
+        .tolist()
+    )
+    if not real_days:
+        return presence_df
+
+    drop_mask = working["_day_num"].isin(real_days) & (working["_model_norm"] == "no uploads")
+    cleaned = working.loc[~drop_mask].drop(columns=["_day_num", "_model_norm", "_count_num"], errors="ignore")
+    return cleaned.reset_index(drop=True)
+
+
+def _ensure_presence_day_coverage(presence_df: pd.DataFrame, year: int, month: int) -> pd.DataFrame:
+    """Guarantee one row per expected day so cache visibly covers all days (0 when no uploads)."""
+    missing_days = _missing_presence_days(presence_df, year, month)
+    if not missing_days:
+        return presence_df
+
+    filler = pd.DataFrame(
+        [{"day": int(day), "model": "No Uploads", "count": 0} for day in missing_days]
+    )
+    if presence_df.empty:
+        return filler.sort_values(["day", "model"]).reset_index(drop=True)
+    return pd.concat([presence_df, filler], ignore_index=True).sort_values(["day", "model"]).reset_index(drop=True)
+
+
 def fetch_onboarded_model_presence_for_days(
     sas_url: str,
     container_name: str,
@@ -815,14 +896,16 @@ def refresh_onboarded_cache_for_month(
         presence_df = current_presence.copy()
 
     missing_days = _missing_presence_days(presence_df, int(year), int(month))
-    if missing_days:
+    stale_placeholder_days = _days_requiring_presence_refresh(presence_df, int(year), int(month))
+    days_to_fetch = sorted(set(missing_days).union(stale_placeholder_days))
+    if days_to_fetch:
         missing_updates = fetch_onboarded_model_presence_for_days(
             sas_url,
             container_name,
             int(year),
             int(month),
             vehicle_model_map,
-            missing_days,
+            days_to_fetch,
         )
         presence_df = merge_model_daily_data(presence_df, missing_updates)
 
@@ -837,6 +920,11 @@ def refresh_onboarded_cache_for_month(
             recent_days,
         )
         presence_df = merge_model_daily_data(presence_df, recent_updates)
+
+    presence_df = _drop_no_upload_placeholders_when_real_data_exists(presence_df)
+
+    # Materialize missing days as zero-count rows to keep Gist day coverage continuous.
+    presence_df = _ensure_presence_day_coverage(presence_df, int(year), int(month))
 
     vehicle_hours_df = st.session_state.get("onboarded_vehicle_hours_df", pd.DataFrame())
     if force_full or vehicle_hours_df.empty:
