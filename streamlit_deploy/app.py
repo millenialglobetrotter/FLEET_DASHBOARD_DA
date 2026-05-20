@@ -168,6 +168,10 @@ st.markdown(
         .brand-header-spacer {
             height: 90px;
         }
+        .ux-subtle-box {
+            margin-bottom: 0.45rem;
+            padding: 0.5rem 0.6rem;
+        }
     }
     .brand-text {
         flex: 1;
@@ -216,6 +220,39 @@ st.markdown(
     }
     [data-testid="stVerticalBlock"] {
         gap: 0.5rem !important;
+    }
+    p, label, [data-testid="stMarkdownContainer"] p {
+        line-height: 1.45;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    [role="combobox"]:focus-visible,
+    [role="radiogroup"] label:focus-visible {
+        outline: 2px solid var(--bosch-blue-50) !important;
+        outline-offset: 2px !important;
+    }
+    .ux-subtle-box {
+        border: 1px solid var(--bosch-gray-85);
+        background: #ffffff;
+        padding: 0.6rem 0.75rem;
+        margin: 0.2rem 0 0.75rem 0;
+        min-height: 76px;
+    }
+    .ux-subtle-title {
+        font-size: 0.82rem;
+        color: #4e5256;
+        margin: 0;
+    }
+    .ux-subtle-value {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #0b1f2a;
+        margin: 0.1rem 0 0;
+    }
+    .ux-inline-help {
+        color: #4e5256;
+        font-size: 0.85rem;
+        margin-top: 0.2rem;
     }
     .stButton button,
     .stDownloadButton button,
@@ -1014,43 +1051,45 @@ if "onboarded_vehicle_details_map" not in st.session_state:
 
 st.markdown('<div style="height: 2rem;"></div>', unsafe_allow_html=True)
 
-if st.button("Refresh Data", use_container_width=False, type="primary"):
-    with st.spinner("Refreshing recent hours..."):
-        try:
-            recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
-            recent_processed = fetch_recent_processed_days(
-                sas_url, container_name, int(year), int(month), lookback_hours=24
-            )
-            st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
-            st.session_state["df_processed"] = merge_daily_data(st.session_state["df_processed"], recent_processed)
-            save_cached_datasets(
-                container_name,
-                int(year),
-                int(month),
-                st.session_state["df_results"],
-                st.session_state["df_processed"],
-            )
-            st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            onboarded_summary = fetch_onboarded_vehicle_summary(make_filter="SML")
-            st.session_state["total_vehicles_onboarded"] = onboarded_summary["total"]
-            st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
-            st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
-            st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
-            st.session_state["onboarded_vehicle_details_map"] = onboarded_summary.get("vehicle_details_map", {})
-            st.session_state.pop("onboarded_presence_df", None)
-            st.session_state.pop("onboarded_vehicle_hours_df", None)
-            st.session_state.pop("onboarded_tab_load_key", None)
-            st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            st.session_state.pop("onboarded_error", None)
-        except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-            st.error(f"Unable to refresh recent hours: {exc}")
-            st.session_state["onboarded_error"] = str(exc)
-
-if "last_refresh" in st.session_state:
-    st.caption(f"Last refresh: {st.session_state['last_refresh']} (last 24 hours)")
-if "cache_loaded_at" in st.session_state:
-    st.caption(f"Shared cache updated at: {st.session_state['cache_loaded_at']}")
+refresh_col, status_col = st.columns([0.22, 0.78])
+with refresh_col:
+    if st.button("Refresh Data", use_container_width=True, type="primary"):
+        with st.spinner("Refreshing recent hours..."):
+            try:
+                recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
+                recent_processed = fetch_recent_processed_days(
+                    sas_url, container_name, int(year), int(month), lookback_hours=24
+                )
+                st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
+                st.session_state["df_processed"] = merge_daily_data(st.session_state["df_processed"], recent_processed)
+                save_cached_datasets(
+                    container_name,
+                    int(year),
+                    int(month),
+                    st.session_state["df_results"],
+                    st.session_state["df_processed"],
+                )
+                st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                onboarded_summary = fetch_onboarded_vehicle_summary(make_filter="SML")
+                st.session_state["total_vehicles_onboarded"] = onboarded_summary["total"]
+                st.session_state["onboarded_model_counts"] = onboarded_summary["model_df"]
+                st.session_state["onboarded_variant_counts"] = onboarded_summary["variant_df"]
+                st.session_state["onboarded_vehicle_model_map"] = onboarded_summary.get("vehicle_model_map", {})
+                st.session_state["onboarded_vehicle_details_map"] = onboarded_summary.get("vehicle_details_map", {})
+                st.session_state.pop("onboarded_presence_df", None)
+                st.session_state.pop("onboarded_vehicle_hours_df", None)
+                st.session_state.pop("onboarded_tab_load_key", None)
+                st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state.pop("onboarded_error", None)
+            except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+                st.error(f"Unable to refresh recent hours: {exc}")
+                st.session_state["onboarded_error"] = str(exc)
+with status_col:
+    if "last_refresh" in st.session_state:
+        st.caption(f"Last refresh: {st.session_state['last_refresh']} (last 24 hours)")
+    if "cache_loaded_at" in st.session_state:
+        st.caption(f"Shared cache updated at: {st.session_state['cache_loaded_at']}")
 
 info_col, metric_col = st.columns([0.65, 0.35])
 with info_col:
@@ -1093,50 +1132,67 @@ if (int(year), int(month)) == (now_ist.year, now_ist.month):
 if "active_tab" not in st.session_state:
     st.session_state["active_tab"] = 0
 
-# Tab selector using buttons
-tab_cols = st.columns(4)
-with tab_cols[0]:
-    if st.button(
-        "📊 Daily Drill-down",
-        use_container_width=True,
-        key="tab_drill_down",
-        type="secondary",
-    ):
-        st.session_state["active_tab"] = 0
-with tab_cols[1]:
-    if st.button(
-        "🔥 Vehicles Live/Hour Heatmap",
-        use_container_width=True,
-        key="tab_heatmap",
-        type="secondary",
-    ):
-        st.session_state["active_tab"] = 1
-with tab_cols[2]:
-    if st.button(
-        "✅ Vehicles Result Processed",
-        use_container_width=True,
-        key="tab_processed",
-        type="secondary",
-    ):
-        st.session_state["active_tab"] = 2
-with tab_cols[3]:
-    if st.button(
-        "🧭 Onboarded Vehicles Drill Down",
-        use_container_width=True,
-        key="tab_onboarded",
-        type="secondary",
-    ):
-        st.session_state["active_tab"] = 3
+summary_cols = st.columns(3)
+with summary_cols[0]:
+    st.markdown(
+        f"""
+        <div class="ux-subtle-box">
+            <p class="ux-subtle-title">Selected period</p>
+            <p class="ux-subtle-value">{calendar.month_name[int(month)]} {int(year)}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with summary_cols[1]:
+    st.markdown(
+        f"""
+        <div class="ux-subtle-box">
+            <p class="ux-subtle-title">Days with live data</p>
+            <p class="ux-subtle-value">{len(available_days)}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with summary_cols[2]:
+    peak_live = int(df_results_ist["vehicle_count"].max()) if not df_results_ist.empty else 0
+    st.markdown(
+        f"""
+        <div class="ux-subtle-box">
+            <p class="ux-subtle-title">Peak live vehicles/hour</p>
+            <p class="ux-subtle-value">{peak_live}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# Tab selector with explicit active state for better navigation clarity.
+tab_labels = [
+    "📊 Daily Drill-down",
+    "🔥 Vehicles Live/Hour Heatmap",
+    "✅ Vehicles Result Processed",
+    "🧭 Onboarded Vehicles Drill Down",
+]
+selected_tab = st.radio(
+    "Dashboard view",
+    options=tab_labels,
+    index=st.session_state.get("active_tab", 0),
+    horizontal=True,
+    label_visibility="collapsed",
+)
+st.session_state["active_tab"] = tab_labels.index(selected_tab)
 
 st.divider()
 
 # Tab 0: Daily Drill-down
 if st.session_state["active_tab"] == 0:
     st.caption("Shows hourly live vehicle count trend for a selected IST day based on raw-data partitions.")
-    l, m, r = st.columns([0.15, 0.6, 0.25])
-    with l:
+    if "selected_day_input" not in st.session_state or st.session_state["selected_day_input"] not in available_days:
+        st.session_state["selected_day_input"] = available_days[0]
+
+    day_label_col, day_select_col, day_prev_col, day_next_col = st.columns([0.12, 0.48, 0.2, 0.2])
+    with day_label_col:
         st.markdown("**Day**")
-    with m:
+    with day_select_col:
         selected_day = st.selectbox(
             "Select Day (IST)",
             options=available_days,
@@ -1144,6 +1200,20 @@ if st.session_state["active_tab"] == 0:
             label_visibility="collapsed",
             key="selected_day_input",
         )
+
+    selected_idx = available_days.index(st.session_state["selected_day_input"])
+    with day_prev_col:
+        prev_disabled = selected_idx == 0
+        if st.button("Previous", key="day_prev_button", use_container_width=True, disabled=prev_disabled):
+            st.session_state["selected_day_input"] = available_days[selected_idx - 1]
+            st.rerun()
+    with day_next_col:
+        next_disabled = selected_idx == len(available_days) - 1
+        if st.button("Next", key="day_next_button", use_container_width=True, disabled=next_disabled):
+            st.session_state["selected_day_input"] = available_days[selected_idx + 1]
+            st.rerun()
+
+    st.markdown('<p class="ux-inline-help">Tip: use Previous/Next for faster day-by-day checks.</p>', unsafe_allow_html=True)
 
     day_data = df_results_ist[df_results_ist["ist_day"] == selected_day].copy()
     if day_data.empty:
@@ -1278,29 +1348,48 @@ if st.session_state["active_tab"] == 2:
                 .sum()
                 .sort_values(["ist_hour", "model"])
             )
-            fig_hourly_breakdown = go.Figure()
-            for model_name in sorted(hourly_model_totals["model"].unique()):
-                model_rows = hourly_model_totals[hourly_model_totals["model"] == model_name].copy()
-                model_rows["ist_hour_label"] = model_rows["ist_hour"].map(lambda h: f"{int(h):02d}:00")
-                fig_hourly_breakdown.add_trace(
-                    go.Bar(
-                        x=model_rows["ist_hour_label"],
-                        y=model_rows["vehicle_count"],
-                        name=str(model_name),
-                        hovertemplate="<b>IST Hour:</b> %{x}<br><b>Model:</b> %{fullData.name}<br><b>Processed Vehicle IDs:</b> %{y}<extra></extra>",
-                    )
-                )
-            fig_hourly_breakdown.update_layout(
-                title=f"Processed Vehicle IDs by Model and Hour (IST) - Day {int(selected_processed_day)}",
-                xaxis_title="Hour of Day (IST)",
-                yaxis_title="Processed Vehicle IDs",
-                **PLOTLY_BRAND_LAYOUT,
-                autosize=True,
-                barmode="group",
-                xaxis={"categoryorder": "array", "categoryarray": [f"{h:02d}:00" for h in range(24)]},
-                margin={"l": 50, "r": 40, "t": 50, "b": 50},
+            model_filter_options = sorted(hourly_model_totals["model"].dropna().unique())
+            selected_processed_models = st.multiselect(
+                "Filter models in hourly breakdown",
+                options=model_filter_options,
+                default=model_filter_options,
+                key=f"processed_model_filter_{int(selected_processed_day)}",
             )
-            st.plotly_chart(fig_hourly_breakdown, use_container_width=True)
+
+            if selected_processed_models:
+                hourly_model_totals = hourly_model_totals[
+                    hourly_model_totals["model"].isin(selected_processed_models)
+                ]
+                hourly_model_df = hourly_model_df[
+                    hourly_model_df["model"].isin(selected_processed_models)
+                ]
+
+            if hourly_model_totals.empty:
+                st.info("No rows match the selected model filter.")
+            else:
+                fig_hourly_breakdown = go.Figure()
+                for model_name in sorted(hourly_model_totals["model"].unique()):
+                    model_rows = hourly_model_totals[hourly_model_totals["model"] == model_name].copy()
+                    model_rows["ist_hour_label"] = model_rows["ist_hour"].map(lambda h: f"{int(h):02d}:00")
+                    fig_hourly_breakdown.add_trace(
+                        go.Bar(
+                            x=model_rows["ist_hour_label"],
+                            y=model_rows["vehicle_count"],
+                            name=str(model_name),
+                            hovertemplate="<b>IST Hour:</b> %{x}<br><b>Model:</b> %{fullData.name}<br><b>Processed Vehicle IDs:</b> %{y}<extra></extra>",
+                        )
+                    )
+                fig_hourly_breakdown.update_layout(
+                    title=f"Processed Vehicle IDs by Model and Hour (IST) - Day {int(selected_processed_day)}",
+                    xaxis_title="Hour of Day (IST)",
+                    yaxis_title="Processed Vehicle IDs",
+                    **PLOTLY_BRAND_LAYOUT,
+                    autosize=True,
+                    barmode="group",
+                    xaxis={"categoryorder": "array", "categoryarray": [f"{h:02d}:00" for h in range(24)]},
+                    margin={"l": 50, "r": 40, "t": 50, "b": 50},
+                )
+                st.plotly_chart(fig_hourly_breakdown, use_container_width=True)
 
             display_df = hourly_model_df.copy()
             display_df["ist_hour"] = display_df["ist_hour"].map(lambda h: f"{int(h):02d}:00")
@@ -1315,7 +1404,15 @@ if st.session_state["active_tab"] == 2:
                 }
             )
             display_df = display_df[["IST Day", "IST Hour", "Model", "Variant", "Vehicle ID Count", "Vehicle IDs"]]
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            with st.expander("View detailed processed vehicle IDs", expanded=False):
+                st.download_button(
+                    "Download processed breakdown CSV",
+                    data=display_df.to_csv(index=False),
+                    file_name=f"processed_breakdown_day_{int(selected_processed_day)}_{int(year)}_{int(month):02d}.csv",
+                    mime="text/csv",
+                    use_container_width=False,
+                )
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 # Tab 3: Onboarded Drill-down
 if st.session_state["active_tab"] == 3:
@@ -1510,8 +1607,20 @@ if st.session_state["active_tab"] == 3:
                     key="onboarded_hours_model_input",
                 )
 
+                top_n_rows = st.slider(
+                    "Rows to display",
+                    min_value=10,
+                    max_value=50,
+                    value=20,
+                    step=5,
+                    key="onboarded_hours_topn",
+                )
+
                 model_vehicles = vehicle_hours_df[vehicle_hours_df["model"] == selected_hours_model].copy()
-                model_vehicles = model_vehicles.sort_values(["operating_hours", "active_days"], ascending=[False, False]).head(20)
+                model_vehicles = model_vehicles.sort_values(
+                    ["operating_hours", "active_days"],
+                    ascending=[False, False],
+                ).head(top_n_rows)
 
                 if model_vehicles.empty:
                     st.info(f"No operating-hours data available for model: {selected_hours_model}")
@@ -1525,14 +1634,22 @@ if st.session_state["active_tab"] == 3:
                             "active_days": "Active Days",
                         }
                     )
-                    st.dataframe(
-                        display_df,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Vehicle ID": st.column_config.TextColumn("Vehicle ID", width="medium"),
-                            "Variant": st.column_config.TextColumn("Variant", width="medium"),
-                            "Operating Hours": st.column_config.NumberColumn("Operating Hours", format="%d"),
-                            "Active Days": st.column_config.NumberColumn("Active Days", format="%d"),
-                        },
-                    )
+                    with st.expander("View highest operating vehicles table", expanded=True):
+                        st.download_button(
+                            "Download operating-hours CSV",
+                            data=display_df.to_csv(index=False),
+                            file_name=f"onboarded_operating_hours_{selected_hours_model}_{int(year)}_{int(month):02d}.csv",
+                            mime="text/csv",
+                            use_container_width=False,
+                        )
+                        st.dataframe(
+                            display_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Vehicle ID": st.column_config.TextColumn("Vehicle ID", width="medium"),
+                                "Variant": st.column_config.TextColumn("Variant", width="medium"),
+                                "Operating Hours": st.column_config.NumberColumn("Operating Hours", format="%d"),
+                                "Active Days": st.column_config.NumberColumn("Active Days", format="%d"),
+                            },
+                        )
