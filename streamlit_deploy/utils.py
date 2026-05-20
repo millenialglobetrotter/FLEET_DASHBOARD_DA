@@ -41,12 +41,25 @@ def secret_or_default(key: str, default_value: Any) -> Any:
 
 def get_secret_value(section: str, key: str, default_value: str = "") -> str:
     """Get secret value from a specific section or return default."""
+    # Top-level exact match
     if key in st.secrets:
         return str(st.secrets[key])
-    
-    if section in st.secrets and key.lower() in st.secrets[section]:
-        return str(st.secrets[section][key.lower()])
-    
+
+    # Top-level case-insensitive match
+    for secret_key in st.secrets:
+        if str(secret_key).lower() == key.lower():
+            return str(st.secrets[secret_key])
+
+    # Section exact and case-insensitive matches
+    if section in st.secrets:
+        section_data = st.secrets[section]
+        if hasattr(section_data, "keys"):
+            if key in section_data:
+                return str(section_data[key])
+            for secret_key in section_data:
+                if str(secret_key).lower() == key.lower():
+                    return str(section_data[secret_key])
+
     return default_value
 
 

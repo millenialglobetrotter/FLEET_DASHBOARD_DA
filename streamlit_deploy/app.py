@@ -386,7 +386,11 @@ def _gist_read_file(gist_id: str, token: str, filename: str) -> str | None:
     try:
         response = http_json(
             f"https://api.github.com/gists/{gist_id}",
-            headers={"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"},
+            headers={
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
             timeout=15,
         )
         file_info = response.get("files", {}).get(filename)
@@ -397,11 +401,19 @@ def _gist_read_file(gist_id: str, token: str, filename: str) -> str | None:
             raw_url = file_info.get("raw_url", "")
             if not raw_url:
                 return None
-            req = urlrequest.Request(raw_url, headers={"Authorization": f"Bearer {token}"})
+            req = urlrequest.Request(
+                raw_url,
+                headers={
+                    "Authorization": f"token {token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
             with urlrequest.urlopen(req, timeout=20) as resp:
                 return resp.read().decode("utf-8")
+        st.session_state.pop("gist_cache_error", None)
         return file_info.get("content")
-    except Exception:
+    except Exception as exc:
+        st.session_state["gist_cache_error"] = f"Gist read failed: {exc}"
         return None
 
 
@@ -412,12 +424,18 @@ def _gist_save_files(gist_id: str, token: str, files: dict[str, str]) -> bool:
         http_json(
             f"https://api.github.com/gists/{gist_id}",
             method="PATCH",
-            headers={"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"},
+            headers={
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
             payload=payload,
             timeout=20,
         )
+        st.session_state.pop("gist_cache_error", None)
         return True
-    except Exception:
+    except Exception as exc:
+        st.session_state["gist_cache_error"] = f"Gist write failed: {exc}"
         return False
 
 
@@ -845,6 +863,13 @@ with st.sidebar:
 
     st.divider()
     st.caption("Shared cache is reused across users. Refresh updates recent data and saves for everyone.")
+    gist_id_dbg, gist_token_dbg = _gist_credentials()
+    if gist_id_dbg and gist_token_dbg:
+        st.caption("Gist cache: configured")
+    else:
+        st.caption("Gist cache: missing GITHUB_GIST_ID/GITHUB_GIST_TOKEN")
+    if st.session_state.get("gist_cache_error"):
+        st.caption(f"Gist cache error: {st.session_state['gist_cache_error']}")
     if not default_sas or not default_container:
         st.warning("⚠️ SAS_URL and/or CONTAINER_NAME not configured in secrets. Please enter them above.")
         st.caption("Tip: Set SAS_URL and CONTAINER_NAME in Streamlit secrets for permanent prefill.")
