@@ -1510,6 +1510,14 @@ with top_left_col:
                         refreshed_presence_df,
                         refreshed_vehicle_hours_df,
                     )
+
+                    # Invalidate Tab 2 computed caches so next render reflects refreshed data.
+                    processed_heatmap_cache_key = f"processed_heatmap_{int(year)}_{int(month):02d}"
+                    st.session_state.pop(processed_heatmap_cache_key, None)
+                    unprocessed_prefix = f"unprocessed_{int(year)}_{int(month):02d}_"
+                    for _cache_key in list(st.session_state.keys()):
+                        if _cache_key.startswith(unprocessed_prefix):
+                            st.session_state.pop(_cache_key, None)
                 except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
                     st.error(f"Unable to refresh recent hours: {exc}")
                     st.session_state["onboarded_error"] = str(exc)
