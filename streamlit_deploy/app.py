@@ -974,62 +974,54 @@ def aggregate_processed_vehicles_by_day_hour(
         return pd.DataFrame(columns=["ist_day", "ist_hour", "vehicle_count"])
 
     now = datetime.now()
-    rows = []
     container_client = ContainerClient.from_container_url(sas_url)
     normalized_lookup: dict[str, str] = {
         _normalize_vehicle_id(vehicle_id): vehicle_id
         for vehicle_id in vehicle_details_map
     }
+    month_prefix = f"result-data/{year}/{month:02d}/"
+    slot_vehicle_ids: dict[tuple[int, int], set[str]] = {}
 
-    # Determine the range of days to process
-    start_day = 1
-    if (year, month) == (now.year, now.month):
-        end_day = now.day
-    else:
-        end_day = calendar.monthrange(year, month)[1]
-
-    for day in range(start_day, end_day + 1):
-        if (year, month, day) > (now.year, now.month, now.day):
+    # One pass through monthly blobs is significantly faster than listing each day/hour prefix.
+    for blob in container_client.list_blobs(name_starts_with=month_prefix):
+        parts = blob.name.split("/")
+        if len(parts) < 6:
             continue
-        
-        end_hour = now.hour if (year, month, day) == (now.year, now.month, now.day) else 23
-        day_hour_data: dict[int, int] = {}
 
-        for hour in range(end_hour + 1):
-            hour_path = f"result-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
-            unique_vehicles: set[str] = set()
+        try:
+            utc_day = int(parts[3])
+            utc_hour = int(parts[4])
+        except ValueError:
+            continue
 
-            for blob in container_client.list_blobs(name_starts_with=hour_path):
-                suffix = blob.name[len(hour_path):]
-                vehicle_id = _extract_vehicle_id_from_suffix(suffix)
-                if not vehicle_id:
-                    continue
+        if (year, month, utc_day) > (now.year, now.month, now.day):
+            continue
+        if (year, month, utc_day) == (now.year, now.month, now.day) and utc_hour > now.hour:
+            continue
 
-                if vehicle_id not in vehicle_details_map:
-                    normalized_id = _normalize_vehicle_id(vehicle_id)
-                    vehicle_id = normalized_lookup.get(normalized_id, vehicle_id)
+        suffix = "/".join(parts[5:])
+        vehicle_id = _extract_vehicle_id_from_suffix(suffix)
+        if not vehicle_id:
+            continue
 
-                unique_vehicles.add(vehicle_id)
+        if vehicle_id not in vehicle_details_map:
+            normalized_id = _normalize_vehicle_id(vehicle_id)
+            vehicle_id = normalized_lookup.get(normalized_id, vehicle_id)
 
-            if unique_vehicles:
-                utc_dt = datetime(year, month, day, hour)
-                ist_dt = utc_dt + timedelta(hours=5, minutes=30)
-                ist_hour = ist_dt.hour
-                if ist_hour not in day_hour_data:
-                    day_hour_data[ist_hour] = 0
-                day_hour_data[ist_hour] += len(unique_vehicles)
-
-        # Create rows for this day
-        utc_dt = datetime(year, month, day)
+        utc_dt = datetime(year, month, utc_day, utc_hour)
         ist_dt = utc_dt + timedelta(hours=5, minutes=30)
-        ist_day = ist_dt.day
+        slot_key = (ist_dt.day, ist_dt.hour)
+        if slot_key not in slot_vehicle_ids:
+            slot_vehicle_ids[slot_key] = set()
+        slot_vehicle_ids[slot_key].add(vehicle_id)
 
-        for ist_hour, count in day_hour_data.items():
-            rows.append({"ist_day": ist_day, "ist_hour": ist_hour, "vehicle_count": count})
-
-    if not rows:
+    if not slot_vehicle_ids:
         return pd.DataFrame(columns=["ist_day", "ist_hour", "vehicle_count"])
 
+    rows = [
+        {"ist_day": ist_day, "ist_hour": ist_hour, "vehicle_count": len(vehicle_ids)}
+        for (ist_day, ist_hour), vehicle_ids in sorted(slot_vehicle_ids.items())
+    ]
     return pd.DataFrame(rows)
 
 
@@ -1713,16 +1705,19 @@ if st.session_state["active_tab"] == 2:
             for hour in range(24):
                 if hour not in pivot_live.columns:
                     pivot_live[hour] = 0
-            pivot_live = pivot_live[list(range(24))]
 
-            # Processed vehicles heatmap
-            processed_hourly_df = aggregate_processed_vehicles_by_day_hour(
-                sas_url,
-                container_name,
-                int(year),
-                int(month),
-                st.session_state.get("onboarded_vehicle_details_map", {}),
-            )
+            # Processed vehicles heatmap (cached in session for current year-month).
+            processed_heatmap_cache_key = f"processed_heatmap_{int(year)}_{int(month):02d}"
+            processed_hourly_df = st.session_state.get(processed_heatmap_cache_key, pd.DataFrame())
+            if processed_hourly_df.empty:
+                processed_hourly_df = aggregate_processed_vehicles_by_day_hour(
+                    sas_url,
+                    container_name,
+                    int(year),
+                    int(month),
+                    st.session_state.get("onboarded_vehicle_details_map", {}),
+                )
+                st.session_state[processed_heatmap_cache_key] = processed_hourly_df
             
             if not processed_hourly_df.empty:
                 pivot_processed = processed_hourly_df.pivot_table(
@@ -1735,9 +1730,21 @@ if st.session_state["active_tab"] == 2:
                 for hour in range(24):
                     if hour not in pivot_processed.columns:
                         pivot_processed[hour] = 0
-                pivot_processed = pivot_processed[list(range(24))]
             else:
                 pivot_processed = pd.DataFrame()
+
+            # Keep both heatmaps on the same day axis for direct visual comparison.
+            live_days = set(pivot_live.index.tolist())
+            processed_days = set(pivot_processed.index.tolist()) if not pivot_processed.empty else set()
+            all_days = sorted(live_days.union(processed_days))
+            if all_days:
+                pivot_live = pivot_live.reindex(index=all_days, fill_value=0)
+                if not pivot_processed.empty:
+                    pivot_processed = pivot_processed.reindex(index=all_days, fill_value=0)
+
+            pivot_live = pivot_live.reindex(columns=list(range(24)), fill_value=0)
+            if not pivot_processed.empty:
+                pivot_processed = pivot_processed.reindex(columns=list(range(24)), fill_value=0)
 
         # Display heatmaps side by side
         heatmap_col1, heatmap_col2 = st.columns(2)
@@ -1749,10 +1756,8 @@ if st.session_state["active_tab"] == 2:
                     x=[f"{h:02d}:00" for h in range(24)],
                     y=[f"Day {int(d)}" for d in pivot_live.index],
                     colorscale=[[0.0, "#e8f1ff"], [0.3, "#9dc9ff"], [0.6, "#007bc0"], [1.0, "#004975"]],
-                    text=pivot_live.values,
-                    texttemplate="%{text}",
                     hovertemplate="<b>Day:</b> %{y}<br><b>Hour:</b> %{x} IST<br><b>Vehicles:</b> %{z}<extra></extra>",
-                    colorbar={"title": "Vehicles", "x": 0.46},
+                    colorbar={"title": "Vehicles", "x": 1.02, "xanchor": "left", "thickness": 12, "len": 0.9},
                 )
             )
             fig_heat_live.update_layout(
@@ -1775,10 +1780,8 @@ if st.session_state["active_tab"] == 2:
                         x=[f"{h:02d}:00" for h in range(24)],
                         y=[f"Day {int(d)}" for d in pivot_processed.index],
                         colorscale=[[0.0, "#e8f4e6"], [0.3, "#9ce6aa"], [0.6, "#00884a"], [1.0, "#005c2f"]],
-                        text=pivot_processed.values,
-                        texttemplate="%{text}",
                         hovertemplate="<b>Day:</b> %{y}<br><b>Hour:</b> %{x} IST<br><b>Processed:</b> %{z}<extra></extra>",
-                        colorbar={"title": "Processed", "x": 1.12},
+                        colorbar={"title": "Processed", "x": 1.02, "xanchor": "left", "thickness": 12, "len": 0.9},
                     )
                 )
                 fig_heat_processed.update_layout(
