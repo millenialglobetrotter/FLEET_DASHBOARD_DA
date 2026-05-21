@@ -1764,7 +1764,7 @@ if st.session_state["active_tab"] == 3:
         with summary_col1:
             st.markdown(
                 f"""
-                <div class="onboarded-metric-card">
+                <div class="onboarded-metric-card" style="border-left:0;">
                     <div class="onboarded-metric-title">Total models</div>
                     <div class="onboarded-metric-value">{total_models_count}</div>
                 </div>
@@ -1774,7 +1774,7 @@ if st.session_state["active_tab"] == 3:
         with summary_col2:
             st.markdown(
                 f"""
-                <div class="onboarded-metric-card">
+                <div class="onboarded-metric-card" style="border-left:0;">
                     <div class="onboarded-metric-title">Total variants</div>
                     <div class="onboarded-metric-value">{total_variants_count}</div>
                 </div>
