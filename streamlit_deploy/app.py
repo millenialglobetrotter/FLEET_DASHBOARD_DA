@@ -124,6 +124,9 @@ st.markdown(
     .brand-header-spacer {
         height: 130px;
     }
+    [data-testid="stSidebar"] > div:first-child {
+        padding-top: 130px;
+    }
     @media (max-width: 992px) {
         .block-container {
             padding: 0.6rem 0.8rem 0.4rem 0.8rem !important;
@@ -143,6 +146,9 @@ st.markdown(
         }
         .brand-header-spacer {
             height: 110px;
+        }
+        [data-testid="stSidebar"] > div:first-child {
+            padding-top: 110px;
         }
     }
     @media (max-width: 640px) {
@@ -169,6 +175,9 @@ st.markdown(
         }
         .brand-header-spacer {
             height: 90px;
+        }
+        [data-testid="stSidebar"] > div:first-child {
+            padding-top: 90px;
         }
         .ux-subtle-box {
             margin-bottom: 0.45rem;
