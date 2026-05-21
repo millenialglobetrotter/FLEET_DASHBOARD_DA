@@ -1094,6 +1094,73 @@ def fetch_processed_model_vehicleids_for_day(
     return pd.DataFrame(rows).sort_values(["ist_day", "ist_hour", "vehicle_count", "model", "variant"], ascending=[True, True, False, True, True]).reset_index(drop=True)
 
 
+def fetch_unprocessed_vehicles_for_day(
+    sas_url: str,
+    container_name: str,
+    year: int,
+    month: int,
+    day: int,
+    vehicle_details_map: dict[str, dict[str, str]],
+) -> tuple[set[str], set[str]]:
+    """Return (raw_ids, processed_ids) for the day (UTC day-level scan, IST offsets not needed here
+    since we want coverage across the full calendar day in both partitions)."""
+    if not sas_url or not container_name or day < 1:
+        return set(), set()
+
+    now = datetime.now()
+    if (year, month, day) > (now.year, now.month, now.day):
+        return set(), set()
+
+    end_hour = now.hour if (year, month, day) == (now.year, now.month, now.day) else 23
+    container_client = ContainerClient.from_container_url(sas_url)
+    normalized_lookup: dict[str, str] = {
+        _normalize_vehicle_id(vid): vid for vid in vehicle_details_map
+    }
+
+    def _resolve(vehicle_id: str) -> str:
+        if vehicle_id not in vehicle_details_map:
+            normalized_id = _normalize_vehicle_id(vehicle_id)
+            return normalized_lookup.get(normalized_id, vehicle_id)
+        return vehicle_id
+
+    raw_ids: set[str] = set()
+    processed_ids: set[str] = set()
+
+    # Scan both partitions for all hours of the day in a single loop per partition.
+    raw_prefix = f"raw-data/{year}/{month:02d}/{day:02d}/"
+    result_prefix = f"result-data/{year}/{month:02d}/{day:02d}/"
+
+    for blob in container_client.list_blobs(name_starts_with=raw_prefix):
+        parts = blob.name[len(raw_prefix):].split("/")
+        if len(parts) < 2:
+            continue
+        try:
+            if int(parts[0]) > end_hour:
+                continue
+        except ValueError:
+            continue
+        suffix = "/".join(parts[1:])
+        vid = _extract_vehicle_id_from_suffix(suffix)
+        if vid:
+            raw_ids.add(_resolve(vid))
+
+    for blob in container_client.list_blobs(name_starts_with=result_prefix):
+        parts = blob.name[len(result_prefix):].split("/")
+        if len(parts) < 2:
+            continue
+        try:
+            if int(parts[0]) > end_hour:
+                continue
+        except ValueError:
+            continue
+        suffix = "/".join(parts[1:])
+        vid = _extract_vehicle_id_from_suffix(suffix)
+        if vid:
+            processed_ids.add(_resolve(vid))
+
+    return raw_ids, processed_ids
+
+
 with st.sidebar:
     st.header("Settings")
 
@@ -1894,6 +1961,107 @@ if st.session_state["active_tab"] == 2:
                     use_container_width=False,
                 )
                 st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+        # -- Unprocessed vehicles section --
+        st.markdown('<div style="height:0.3rem;"></div>', unsafe_allow_html=True)
+        st.markdown("**Vehicles Not Processed on This Day**")
+        st.caption(
+            "Vehicles present in raw-data partitions but absent from result-data for the selected day."
+        )
+
+        unproc_cache_key = f"unprocessed_{int(year)}_{int(month):02d}_{int(selected_processed_day)}"
+        if unproc_cache_key not in st.session_state:
+            with st.spinner("Comparing raw-data vs result-data vehicle IDs..."):
+                raw_ids, processed_ids = fetch_unprocessed_vehicles_for_day(
+                    sas_url,
+                    container_name,
+                    int(year),
+                    int(month),
+                    int(selected_processed_day),
+                    st.session_state.get("onboarded_vehicle_details_map", {}),
+                )
+            st.session_state[unproc_cache_key] = (raw_ids, processed_ids)
+        else:
+            raw_ids, processed_ids = st.session_state[unproc_cache_key]
+
+        unprocessed_ids = sorted(raw_ids - processed_ids)
+        only_processed_ids = sorted(processed_ids - raw_ids)
+
+        kpi1, kpi2, kpi3 = st.columns(3)
+        with kpi1:
+            st.markdown(
+                f"""<div class="onboarded-metric-card" style="border-left:0;">
+                    <div class="onboarded-metric-title">Vehicles in raw-data</div>
+                    <div class="onboarded-metric-value">{len(raw_ids)}</div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+        with kpi2:
+            st.markdown(
+                f"""<div class="onboarded-metric-card" style="border-left:0;">
+                    <div class="onboarded-metric-title">Vehicles in result-data</div>
+                    <div class="onboarded-metric-value">{len(processed_ids)}</div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+        with kpi3:
+            st.markdown(
+                f"""<div class="onboarded-metric-card" style="border-left:0;">
+                    <div class="onboarded-metric-title">Not processed (raw only)</div>
+                    <div class="onboarded-metric-value" style="color:#c0392b;">{len(unprocessed_ids)}</div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+
+        if unprocessed_ids:
+            vehicle_details_map_ui = st.session_state.get("onboarded_vehicle_details_map", {})
+            unprocessed_rows = []
+            for vid in unprocessed_ids:
+                details = vehicle_details_map_ui.get(vid, {})
+                unprocessed_rows.append(
+                    {
+                        "Vehicle ID": vid,
+                        "Model": details.get("model", "Unknown") or "Unknown",
+                        "Variant": details.get("variant", "Unknown") or "Unknown",
+                    }
+                )
+            unprocessed_display_df = pd.DataFrame(unprocessed_rows)
+
+            with st.expander(
+                f"View {len(unprocessed_ids)} vehicle(s) not processed on Day {int(selected_processed_day)}",
+                expanded=True,
+            ):
+                st.download_button(
+                    "Download unprocessed vehicles CSV",
+                    data=unprocessed_display_df.to_csv(index=False),
+                    file_name=f"unprocessed_vehicles_day_{int(selected_processed_day)}_{int(year)}_{int(month):02d}.csv",
+                    mime="text/csv",
+                    use_container_width=False,
+                )
+                st.dataframe(unprocessed_display_df, use_container_width=True, hide_index=True)
+
+            if only_processed_ids:
+                with st.expander(
+                    f"ⓘ {len(only_processed_ids)} vehicle(s) in result-data but not in raw-data",
+                    expanded=False,
+                ):
+                    st.caption("These may be vehicles from a previous UTC day whose IST hour crosses midnight.")
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Vehicle ID": vid,
+                                    "Model": vehicle_details_map_ui.get(vid, {}).get("model", "Unknown") or "Unknown",
+                                    "Variant": vehicle_details_map_ui.get(vid, {}).get("variant", "Unknown") or "Unknown",
+                                }
+                                for vid in only_processed_ids
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+        else:
+            st.success(f"All vehicles in raw-data were processed on Day {int(selected_processed_day)}.")
 
 # Tab 3: Onboarded Drill-down
 if st.session_state["active_tab"] == 3:
