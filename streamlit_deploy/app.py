@@ -1377,15 +1377,36 @@ with top_left_col:
 
 with metric_col:
     total_onboarded = st.session_state.get("total_vehicles_onboarded", "N/A")
-    st.markdown(
-        f"""
-        <div class="onboarded-metric-card">
-            <div class="onboarded-metric-title">Total vehicles onboarded</div>
-            <div class="onboarded-metric-value">{total_onboarded}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    uploading_today_value = "N/A"
+    now_ist_kpi = datetime.now() + timedelta(hours=5, minutes=30)
+    if (int(year), int(month)) == (now_ist_kpi.year, now_ist_kpi.month):
+        presence_kpi_df = st.session_state.get("onboarded_presence_df", pd.DataFrame())
+        if not presence_kpi_df.empty and "day" in presence_kpi_df.columns and "count" in presence_kpi_df.columns:
+            day_rows = presence_kpi_df[presence_kpi_df["day"] == int(now_ist_kpi.day)]
+            if not day_rows.empty:
+                uploading_today_value = int(pd.to_numeric(day_rows["count"], errors="coerce").fillna(0).sum())
+
+    metric_left, metric_right = st.columns(2)
+    with metric_left:
+        st.markdown(
+            f"""
+            <div class="onboarded-metric-card">
+                <div class="onboarded-metric-title">Total vehicles onboarded</div>
+                <div class="onboarded-metric-value">{total_onboarded}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with metric_right:
+        st.markdown(
+            f"""
+            <div class="onboarded-metric-card">
+                <div class="onboarded-metric-title">Total vehicles uploading data <span title="Total unique vehicles which have uploaded data today" style="cursor:help;">ⓘ</span></div>
+                <div class="onboarded-metric-value">{uploading_today_value}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 st.markdown('<div style="height:0.2rem;"></div>', unsafe_allow_html=True)
 
