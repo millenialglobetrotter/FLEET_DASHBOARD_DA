@@ -323,6 +323,25 @@ st.markdown(
         display: none !important;
     }
     footer {visibility: hidden;}
+    .metric-info-icon {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        line-height: 18px;
+        text-align: center;
+        background-color: var(--bosch-blue-50);
+        color: white;
+        border-radius: 50%;
+        font-weight: 700;
+        font-size: 0.75rem;
+        cursor: help;
+        margin-left: 0.35rem;
+        vertical-align: middle;
+        transition: background-color 0.2s ease;
+    }
+    .metric-info-icon:hover {
+        background-color: var(--bosch-blue-40);
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1390,7 +1409,7 @@ with metric_col:
     with metric_left:
         st.markdown(
             f"""
-            <div class="onboarded-metric-card">
+            <div class="onboarded-metric-card" style="border-left:0;">
                 <div class="onboarded-metric-title">Total vehicles onboarded</div>
                 <div class="onboarded-metric-value">{total_onboarded}</div>
             </div>
@@ -1400,8 +1419,8 @@ with metric_col:
     with metric_right:
         st.markdown(
             f"""
-            <div class="onboarded-metric-card">
-                <div class="onboarded-metric-title">Total vehicles uploading data <span title="Total unique vehicles which have uploaded data today" style="cursor:help;">ⓘ</span></div>
+            <div class="onboarded-metric-card" style="border-left:0;">
+                <div class="onboarded-metric-title">Total vehicles uploading data <span class="metric-info-icon" title="Total unique vehicles which have uploaded data today">ⓘ</span></div>
                 <div class="onboarded-metric-value">{uploading_today_value}</div>
             </div>
             """,
