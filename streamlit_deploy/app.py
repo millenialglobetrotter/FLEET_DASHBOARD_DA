@@ -1753,6 +1753,35 @@ if st.session_state["active_tab"] == 3:
         else:
             st.info("Onboarded vehicles found, but model/variant fields are missing in the registry response.")
     else:
+        total_models_count = 0
+        total_variants_count = 0
+        if not model_df.empty and "model" in model_df.columns:
+            total_models_count = int(model_df["model"].nunique())
+        if not variant_df.empty and "model_variant" in variant_df.columns:
+            total_variants_count = int(variant_df["model_variant"].nunique())
+
+        summary_col1, summary_col2 = st.columns(2)
+        with summary_col1:
+            st.markdown(
+                f"""
+                <div class="onboarded-metric-card">
+                    <div class="onboarded-metric-title">Total models</div>
+                    <div class="onboarded-metric-value">{total_models_count}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with summary_col2:
+            st.markdown(
+                f"""
+                <div class="onboarded-metric-card">
+                    <div class="onboarded-metric-title">Total variants</div>
+                    <div class="onboarded-metric-value">{total_variants_count}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
         left_col, right_col = st.columns(2)
 
         with left_col:
