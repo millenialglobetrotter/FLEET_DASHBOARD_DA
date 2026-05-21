@@ -34,7 +34,7 @@ from data_fetchers import (
 st.set_page_config(
     page_title="Fleet Level Dashboard",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 BOSCH_PRIMARY = "#007bc0"
@@ -327,8 +327,7 @@ st.markdown(
         border-radius: 0 !important;
     }
     .stAppHeader,
-    header[data-testid="stHeader"],
-    [data-testid="stToolbar"] {
+    header[data-testid="stHeader"] {
         display: none !important;
     }
     footer {visibility: hidden;}
