@@ -962,6 +962,77 @@ def refresh_onboarded_cache_for_month(
     return presence_df, vehicle_hours_df
 
 
+def aggregate_processed_vehicles_by_day_hour(
+    sas_url: str,
+    container_name: str,
+    year: int,
+    month: int,
+    vehicle_details_map: dict[str, dict[str, str]],
+) -> pd.DataFrame:
+    """Aggregate processed vehicles by day and hour for the entire month (IST)."""
+    if not sas_url or not container_name:
+        return pd.DataFrame(columns=["ist_day", "ist_hour", "vehicle_count"])
+
+    now = datetime.now()
+    rows = []
+    container_client = ContainerClient.from_container_url(sas_url)
+    normalized_lookup: dict[str, str] = {
+        _normalize_vehicle_id(vehicle_id): vehicle_id
+        for vehicle_id in vehicle_details_map
+    }
+
+    # Determine the range of days to process
+    start_day = 1
+    if (year, month) == (now.year, now.month):
+        end_day = now.day
+    else:
+        end_day = calendar.monthrange(year, month)[1]
+
+    for day in range(start_day, end_day + 1):
+        if (year, month, day) > (now.year, now.month, now.day):
+            continue
+        
+        end_hour = now.hour if (year, month, day) == (now.year, now.month, now.day) else 23
+        day_hour_data: dict[int, int] = {}
+
+        for hour in range(end_hour + 1):
+            hour_path = f"result-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
+            unique_vehicles: set[str] = set()
+
+            for blob in container_client.list_blobs(name_starts_with=hour_path):
+                suffix = blob.name[len(hour_path):]
+                vehicle_id = _extract_vehicle_id_from_suffix(suffix)
+                if not vehicle_id:
+                    continue
+
+                if vehicle_id not in vehicle_details_map:
+                    normalized_id = _normalize_vehicle_id(vehicle_id)
+                    vehicle_id = normalized_lookup.get(normalized_id, vehicle_id)
+
+                unique_vehicles.add(vehicle_id)
+
+            if unique_vehicles:
+                utc_dt = datetime(year, month, day, hour)
+                ist_dt = utc_dt + timedelta(hours=5, minutes=30)
+                ist_hour = ist_dt.hour
+                if ist_hour not in day_hour_data:
+                    day_hour_data[ist_hour] = 0
+                day_hour_data[ist_hour] += len(unique_vehicles)
+
+        # Create rows for this day
+        utc_dt = datetime(year, month, day)
+        ist_dt = utc_dt + timedelta(hours=5, minutes=30)
+        ist_day = ist_dt.day
+
+        for ist_hour, count in day_hour_data.items():
+            rows.append({"ist_day": ist_day, "ist_hour": ist_hour, "vehicle_count": count})
+
+    if not rows:
+        return pd.DataFrame(columns=["ist_day", "ist_hour", "vehicle_count"])
+
+    return pd.DataFrame(rows)
+
+
 def fetch_processed_model_vehicleids_for_day(
     sas_url: str,
     container_name: str,
@@ -1624,6 +1695,105 @@ if st.session_state["active_tab"] == 2:
             margin={"l": 50, "r": 40, "t": 50, "b": 50},
         )
         st.plotly_chart(fig_processed, use_container_width=True)
+
+        # Heatmap comparison: Live vehicles vs Processed vehicles
+        st.markdown('<div style="height:0.3rem;"></div>', unsafe_allow_html=True)
+        st.markdown("**Live Vehicles vs Processed Vehicles - Hourly Heatmap (IST)**")
+        st.caption("Compare hourly vehicle counts: raw live data vs processed results side by side.")
+        
+        with st.spinner("Loading heatmap data..."):
+            # Live vehicles heatmap
+            pivot_live = df_results_ist.pivot_table(
+                index="ist_day",
+                columns="ist_hour",
+                values="vehicle_count",
+                fill_value=0,
+                aggfunc="sum",
+            )
+            for hour in range(24):
+                if hour not in pivot_live.columns:
+                    pivot_live[hour] = 0
+            pivot_live = pivot_live[list(range(24))]
+
+            # Processed vehicles heatmap
+            processed_hourly_df = aggregate_processed_vehicles_by_day_hour(
+                sas_url,
+                container_name,
+                int(year),
+                int(month),
+                st.session_state.get("onboarded_vehicle_details_map", {}),
+            )
+            
+            if not processed_hourly_df.empty:
+                pivot_processed = processed_hourly_df.pivot_table(
+                    index="ist_day",
+                    columns="ist_hour",
+                    values="vehicle_count",
+                    fill_value=0,
+                    aggfunc="sum",
+                )
+                for hour in range(24):
+                    if hour not in pivot_processed.columns:
+                        pivot_processed[hour] = 0
+                pivot_processed = pivot_processed[list(range(24))]
+            else:
+                pivot_processed = pd.DataFrame()
+
+        # Display heatmaps side by side
+        heatmap_col1, heatmap_col2 = st.columns(2)
+        
+        with heatmap_col1:
+            fig_heat_live = go.Figure(
+                go.Heatmap(
+                    z=pivot_live.values,
+                    x=[f"{h:02d}:00" for h in range(24)],
+                    y=[f"Day {int(d)}" for d in pivot_live.index],
+                    colorscale=[[0.0, "#e8f1ff"], [0.3, "#9dc9ff"], [0.6, "#007bc0"], [1.0, "#004975"]],
+                    text=pivot_live.values,
+                    texttemplate="%{text}",
+                    hovertemplate="<b>Day:</b> %{y}<br><b>Hour:</b> %{x} IST<br><b>Vehicles:</b> %{z}<extra></extra>",
+                    colorbar={"title": "Vehicles", "x": 0.46},
+                )
+            )
+            fig_heat_live.update_layout(
+                title="Live Vehicles/Hour",
+                xaxis_title="Hour of Day (IST)",
+                yaxis_title="Day",
+                **PLOTLY_BRAND_LAYOUT,
+                autosize=True,
+                margin={"l": 60, "r": 40, "t": 50, "b": 50},
+                yaxis={"autorange": "reversed"},
+                height=500,
+            )
+            st.plotly_chart(fig_heat_live, use_container_width=True)
+        
+        with heatmap_col2:
+            if not pivot_processed.empty:
+                fig_heat_processed = go.Figure(
+                    go.Heatmap(
+                        z=pivot_processed.values,
+                        x=[f"{h:02d}:00" for h in range(24)],
+                        y=[f"Day {int(d)}" for d in pivot_processed.index],
+                        colorscale=[[0.0, "#e8f4e6"], [0.3, "#9ce6aa"], [0.6, "#00884a"], [1.0, "#005c2f"]],
+                        text=pivot_processed.values,
+                        texttemplate="%{text}",
+                        hovertemplate="<b>Day:</b> %{y}<br><b>Hour:</b> %{x} IST<br><b>Processed:</b> %{z}<extra></extra>",
+                        colorbar={"title": "Processed", "x": 1.12},
+                    )
+                )
+                fig_heat_processed.update_layout(
+                    title="Processed Vehicles/Hour",
+                    xaxis_title="Hour of Day (IST)",
+                    yaxis_title="Day",
+                    **PLOTLY_BRAND_LAYOUT,
+                    autosize=True,
+                    margin={"l": 60, "r": 40, "t": 50, "b": 50},
+                    yaxis={"autorange": "reversed"},
+                    height=500,
+                )
+                st.plotly_chart(fig_heat_processed, use_container_width=True)
+            else:
+                st.info("No processed vehicle data available for heatmap.")
 
         st.divider()
         st.markdown("**Processed Vehicle IDs by Model and Hour**")
