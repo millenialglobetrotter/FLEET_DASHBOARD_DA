@@ -392,14 +392,6 @@ def _safe_cache_key(container_name: str, year: int, month: int) -> str:
     return f"{cleaned}_{year}_{month:02d}"
 
 
-def _cache_paths(container_name: str, year: int, month: int):
-    key = _safe_cache_key(container_name, year, month)
-    raw_path = CACHE_DIR / f"raw_{key}.csv"
-    processed_path = CACHE_DIR / f"processed_{key}.csv"
-    meta_path = CACHE_DIR / f"meta_{key}.json"
-    return raw_path, processed_path, meta_path
-
-
 def _gist_credentials() -> tuple[str, str]:
     """Return (gist_id, github_token) from secrets or config, empty strings if not configured."""
     cfg = load_local_config().get("github_gist", {})
@@ -469,7 +461,6 @@ def _gist_save_files(gist_id: str, token: str, files: dict[str, str]) -> bool:
 def load_cached_datasets(container_name: str, year: int, month: int):
     key = _safe_cache_key(container_name, year, month)
     raw_df = pd.DataFrame()
-    processed_df = pd.DataFrame()
     presence_df = pd.DataFrame()
     vehicle_hours_df = pd.DataFrame()
     cached_at = None
@@ -482,17 +473,14 @@ def load_cached_datasets(container_name: str, year: int, month: int):
 
     gist_id, gist_token = _gist_credentials()
     if not gist_id or not gist_token:
-        return raw_df, processed_df, presence_df, vehicle_hours_df, cached_at
+        return raw_df, presence_df, vehicle_hours_df, cached_at
 
     raw_content = _gist_read_file(gist_id, gist_token, f"raw_{key}.csv")
-    processed_content = _gist_read_file(gist_id, gist_token, f"processed_{key}.csv")
     presence_content = _gist_read_file(gist_id, gist_token, f"presence_{key}.csv")
     vehicle_hours_content = _gist_read_file(gist_id, gist_token, f"vehicle_hours_{key}.csv")
     meta_content = _gist_read_file(gist_id, gist_token, f"meta_{key}.json")
     if raw_content:
         raw_df = _safe_read_csv(raw_content)
-    if processed_content:
-        processed_df = _safe_read_csv(processed_content)
     if presence_content:
         presence_df = _safe_read_csv(presence_content)
     if vehicle_hours_content:
@@ -502,7 +490,7 @@ def load_cached_datasets(container_name: str, year: int, month: int):
             cached_at = json.loads(meta_content).get("cached_at")
         except Exception:
             cached_at = None
-    return raw_df, processed_df, presence_df, vehicle_hours_df, cached_at
+    return raw_df, presence_df, vehicle_hours_df, cached_at
 
 
 def save_cached_datasets(
@@ -510,7 +498,6 @@ def save_cached_datasets(
     year: int,
     month: int,
     raw_df: pd.DataFrame,
-    processed_df: pd.DataFrame,
     presence_df: pd.DataFrame | None = None,
     vehicle_hours_df: pd.DataFrame | None = None,
 ):
@@ -525,7 +512,6 @@ def save_cached_datasets(
 
     files = {
         f"raw_{key}.csv": raw_df.to_csv(index=False),
-        f"processed_{key}.csv": processed_df.to_csv(index=False),
         f"meta_{key}.json": json.dumps({"cached_at": now_str}),
     }
     if not presence_df.empty:
@@ -543,61 +529,6 @@ def is_cache_stale(cached_at: str, max_age_minutes: int = 15) -> bool:
     except ValueError:
         return True
     return datetime.now() - cached_time >= timedelta(minutes=max_age_minutes)
-
-
-def count_processed_for_day(container_client: ContainerClient, year: int, month: int, day: int, end_hour: int) -> dict:
-    unique_partitions = set()
-
-    for hour in range(end_hour + 1):
-        hour_path = f"result-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
-        for blob in container_client.list_blobs(name_starts_with=hour_path):
-            suffix = blob.name[len(hour_path):]
-            if "/" in suffix:
-                unique_partitions.add(suffix.split("/", 1)[0])
-
-    return {"day": day, "processed_count": len(unique_partitions)}
-
-
-def fetch_recent_processed_days(
-    sas_url: str, container_name: str, year: int, month: int, lookback_hours: int = 24
-) -> pd.DataFrame:
-    if not sas_url or not container_name:
-        return pd.DataFrame()
-
-    now = datetime.now().replace(minute=0, second=0, microsecond=0)
-    if (year, month) != (now.year, now.month):
-        return pd.DataFrame()
-
-    start = now - timedelta(hours=max(lookback_hours - 1, 0))
-    affected_days = sorted({t.day for t in [start, now] if t.year == year and t.month == month})
-    if start.day != now.day and start.year == year and start.month == month and now.year == year and now.month == month:
-        affected_days = list(range(start.day, now.day + 1))
-
-    container_client = ContainerClient.from_container_url(sas_url)
-    rows = []
-    for day in affected_days:
-        end_hour = now.hour if day == now.day else 23
-        rows.append(count_processed_for_day(container_client, year, month, day, end_hour))
-
-    return pd.DataFrame(rows)
-
-
-def merge_daily_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.DataFrame:
-    if existing.empty:
-        return updates.copy()
-    if updates.empty:
-        return existing.copy()
-
-    key = ["day"]
-    base = existing.set_index(key).copy()
-    upd = updates.set_index(key)
-
-    new_idx = upd.index.difference(base.index)
-    base.update(upd)
-    if len(new_idx) > 0:
-        base = pd.concat([base, upd.loc[new_idx]])
-
-    return base.reset_index().sort_values(key).reset_index(drop=True)
 
 
 def _recent_days_for_lookback(year: int, month: int, lookback_hours: int = 24) -> list[int]:
@@ -970,205 +901,6 @@ def refresh_onboarded_cache_for_month(
     return presence_df, vehicle_hours_df
 
 
-def aggregate_processed_vehicles_by_day_hour(
-    sas_url: str,
-    container_name: str,
-    year: int,
-    month: int,
-    vehicle_details_map: dict[str, dict[str, str]],
-) -> pd.DataFrame:
-    """Aggregate processed vehicles by day and hour for the entire month (IST)."""
-    if not sas_url or not container_name:
-        return pd.DataFrame(columns=["ist_day", "ist_hour", "vehicle_count"])
-
-    now = datetime.now()
-    container_client = ContainerClient.from_container_url(sas_url)
-    normalized_lookup: dict[str, str] = {
-        _normalize_vehicle_id(vehicle_id): vehicle_id
-        for vehicle_id in vehicle_details_map
-    }
-    month_prefix = f"result-data/{year}/{month:02d}/"
-    slot_vehicle_ids: dict[tuple[int, int], set[str]] = {}
-
-    # One pass through monthly blobs is significantly faster than listing each day/hour prefix.
-    for blob in container_client.list_blobs(name_starts_with=month_prefix):
-        parts = blob.name.split("/")
-        if len(parts) < 6:
-            continue
-
-        try:
-            utc_day = int(parts[3])
-            utc_hour = int(parts[4])
-        except ValueError:
-            continue
-
-        if (year, month, utc_day) > (now.year, now.month, now.day):
-            continue
-        if (year, month, utc_day) == (now.year, now.month, now.day) and utc_hour > now.hour:
-            continue
-
-        suffix = "/".join(parts[5:])
-        vehicle_id = _extract_vehicle_id_from_suffix(suffix)
-        if not vehicle_id:
-            continue
-
-        if vehicle_id not in vehicle_details_map:
-            normalized_id = _normalize_vehicle_id(vehicle_id)
-            vehicle_id = normalized_lookup.get(normalized_id, vehicle_id)
-
-        utc_dt = datetime(year, month, utc_day, utc_hour)
-        ist_dt = utc_dt + timedelta(hours=5, minutes=30)
-        slot_key = (ist_dt.day, ist_dt.hour)
-        if slot_key not in slot_vehicle_ids:
-            slot_vehicle_ids[slot_key] = set()
-        slot_vehicle_ids[slot_key].add(vehicle_id)
-
-    if not slot_vehicle_ids:
-        return pd.DataFrame(columns=["ist_day", "ist_hour", "vehicle_count"])
-
-    rows = [
-        {"ist_day": ist_day, "ist_hour": ist_hour, "vehicle_count": len(vehicle_ids)}
-        for (ist_day, ist_hour), vehicle_ids in sorted(slot_vehicle_ids.items())
-    ]
-    return pd.DataFrame(rows)
-
-
-def fetch_processed_model_vehicleids_for_day(
-    sas_url: str,
-    container_name: str,
-    year: int,
-    month: int,
-    day: int,
-    vehicle_details_map: dict[str, dict[str, str]],
-) -> pd.DataFrame:
-    if not sas_url or not container_name or day < 1:
-        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "variant", "vehicle_count", "vehicle_ids"])
-
-    now = datetime.now()
-    if (year, month, day) > (now.year, now.month, now.day):
-        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "variant", "vehicle_count", "vehicle_ids"])
-
-    end_hour = now.hour if (year, month, day) == (now.year, now.month, now.day) else 23
-    container_client = ContainerClient.from_container_url(sas_url)
-    rows = []
-    normalized_lookup: dict[str, str] = {
-        _normalize_vehicle_id(vehicle_id): vehicle_id
-        for vehicle_id in vehicle_details_map
-    }
-
-    for hour in range(end_hour + 1):
-        hour_path = f"result-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
-        model_variant_vehicle_ids: dict[tuple[str, str], set[str]] = {}
-
-        for blob in container_client.list_blobs(name_starts_with=hour_path):
-            suffix = blob.name[len(hour_path):]
-            vehicle_id = _extract_vehicle_id_from_suffix(suffix)
-            if not vehicle_id:
-                continue
-
-            if vehicle_id not in vehicle_details_map:
-                normalized_id = _normalize_vehicle_id(vehicle_id)
-                vehicle_id = normalized_lookup.get(normalized_id, vehicle_id)
-
-            details = vehicle_details_map.get(vehicle_id, {})
-
-            model_name = details.get("model", "Unknown") or "Unknown"
-            variant_name = details.get("variant", "Unknown") or "Unknown"
-            key = (model_name, variant_name)
-            if key not in model_variant_vehicle_ids:
-                model_variant_vehicle_ids[key] = set()
-            model_variant_vehicle_ids[key].add(vehicle_id)
-
-        for (model_name, variant_name), ids in model_variant_vehicle_ids.items():
-            sorted_ids = sorted(ids)
-            utc_dt = datetime(year, month, day, hour)
-            ist_dt = utc_dt + timedelta(hours=5, minutes=30)
-            rows.append(
-                {
-                    "day": day,
-                    "hour": hour,
-                    "ist_day": ist_dt.day,
-                    "ist_hour": ist_dt.hour,
-                    "model": model_name,
-                    "variant": variant_name,
-                    "vehicle_count": len(sorted_ids),
-                    "vehicle_ids": ", ".join(sorted_ids),
-                }
-            )
-
-    if not rows:
-        return pd.DataFrame(columns=["day", "hour", "ist_day", "ist_hour", "model", "variant", "vehicle_count", "vehicle_ids"])
-
-    return pd.DataFrame(rows).sort_values(["ist_day", "ist_hour", "vehicle_count", "model", "variant"], ascending=[True, True, False, True, True]).reset_index(drop=True)
-
-
-def fetch_unprocessed_vehicles_for_day(
-    sas_url: str,
-    container_name: str,
-    year: int,
-    month: int,
-    day: int,
-    vehicle_details_map: dict[str, dict[str, str]],
-) -> tuple[set[str], set[str]]:
-    """Return (raw_ids, processed_ids) for the day (UTC day-level scan, IST offsets not needed here
-    since we want coverage across the full calendar day in both partitions)."""
-    if not sas_url or not container_name or day < 1:
-        return set(), set()
-
-    now = datetime.now()
-    if (year, month, day) > (now.year, now.month, now.day):
-        return set(), set()
-
-    end_hour = now.hour if (year, month, day) == (now.year, now.month, now.day) else 23
-    container_client = ContainerClient.from_container_url(sas_url)
-    normalized_lookup: dict[str, str] = {
-        _normalize_vehicle_id(vid): vid for vid in vehicle_details_map
-    }
-
-    def _resolve(vehicle_id: str) -> str:
-        if vehicle_id not in vehicle_details_map:
-            normalized_id = _normalize_vehicle_id(vehicle_id)
-            return normalized_lookup.get(normalized_id, vehicle_id)
-        return vehicle_id
-
-    raw_ids: set[str] = set()
-    processed_ids: set[str] = set()
-
-    # Scan both partitions for all hours of the day in a single loop per partition.
-    raw_prefix = f"raw-data/{year}/{month:02d}/{day:02d}/"
-    result_prefix = f"result-data/{year}/{month:02d}/{day:02d}/"
-
-    for blob in container_client.list_blobs(name_starts_with=raw_prefix):
-        parts = blob.name[len(raw_prefix):].split("/")
-        if len(parts) < 2:
-            continue
-        try:
-            if int(parts[0]) > end_hour:
-                continue
-        except ValueError:
-            continue
-        suffix = "/".join(parts[1:])
-        vid = _extract_vehicle_id_from_suffix(suffix)
-        if vid:
-            raw_ids.add(_resolve(vid))
-
-    for blob in container_client.list_blobs(name_starts_with=result_prefix):
-        parts = blob.name[len(result_prefix):].split("/")
-        if len(parts) < 2:
-            continue
-        try:
-            if int(parts[0]) > end_hour:
-                continue
-        except ValueError:
-            continue
-        suffix = "/".join(parts[1:])
-        vid = _extract_vehicle_id_from_suffix(suffix)
-        if vid:
-            processed_ids.add(_resolve(vid))
-
-    return raw_ids, processed_ids
-
-
 with st.sidebar:
     st.header("Settings")
 
@@ -1320,61 +1052,15 @@ def merge_hourly_data(existing: pd.DataFrame, updates: pd.DataFrame) -> pd.DataF
     return merged
 
 
-@st.cache_data(show_spinner=False)
-def count_processed_vehicles_per_day(sas_url: str, container_name: str, year: int, month: int) -> pd.DataFrame:
-    """Fetch unique sub-partition count from result-data path per day (aggregated across hours)."""
-    rows = []
-
-    if not sas_url or not container_name:
-        return pd.DataFrame()
-
-    container_client = ContainerClient.from_container_url(sas_url)
-    now = datetime.now()
-
-    if (year, month) > (now.year, now.month):
-        return pd.DataFrame()
-
-    _, num_days = calendar.monthrange(year, month)
-    last_day = now.day if (year == now.year and month == now.month) else num_days
-
-    total_hours = sum(
-        (now.hour + 1) if (year == now.year and month == now.month and day == now.day) else 24
-        for day in range(1, last_day + 1)
-    )
-    processed = 0
-    progress = st.progress(0.0)
-
-    for day in range(1, last_day + 1):
-        unique_partitions = set()
-        end_hour = now.hour if (year == now.year and month == now.month and day == now.day) else 23
-        
-        for hour in range(end_hour + 1):
-            hour_path = f"result-data/{year}/{month:02d}/{day:02d}/{hour:02d}/"
-            
-            for blob in container_client.list_blobs(name_starts_with=hour_path):
-                suffix = blob.name[len(hour_path):]
-                if "/" in suffix:
-                    unique_partitions.add(suffix.split("/", 1)[0])
-            
-            processed += 1
-            progress.progress(min(processed / max(total_hours, 1), 1.0))
-
-        rows.append({"day": day, "processed_count": len(unique_partitions)})
-
-    progress.empty()
-    return pd.DataFrame(rows)
-
-
 current_key = (sas_url, container_name, int(year), int(month))
 stored_key = st.session_state.get("dataset_key")
 
 if stored_key != current_key or "df_results" not in st.session_state:
     with st.spinner("Loading shared cache..."):
         try:
-            cached_raw, cached_processed, cached_presence, cached_vehicle_hours, cached_at = load_cached_datasets(container_name, int(year), int(month))
-            if not cached_raw.empty and not cached_processed.empty:
+            cached_raw, cached_presence, cached_vehicle_hours, cached_at = load_cached_datasets(container_name, int(year), int(month))
+            if not cached_raw.empty:
                 st.session_state["df_results"] = cached_raw
-                st.session_state["df_processed"] = cached_processed
                 st.session_state["cache_loaded_at"] = cached_at
                 # Seed onboarded tab data from cache if available — avoids slow Azure fetch on first open.
                 if not cached_presence.empty:
@@ -1386,15 +1072,11 @@ if stored_key != current_key or "df_results" not in st.session_state:
                 st.session_state["df_results"] = count_vehicles_per_hour_for_month(
                     sas_url, container_name, int(year), int(month)
                 )
-                st.session_state["df_processed"] = count_processed_vehicles_per_day(
-                    sas_url, container_name, int(year), int(month)
-                )
                 save_cached_datasets(
                     container_name,
                     int(year),
                     int(month),
                     st.session_state["df_results"],
-                    st.session_state["df_processed"],
                 )
                 st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1411,20 +1093,9 @@ if st.session_state.get("recent_data_bootstrap_key") != recent_bootstrap_key:
         now = datetime.now()
         if (int(year), int(month)) == (now.year, now.month):
             recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=12)
-            recent_processed = fetch_recent_processed_days(
-                sas_url,
-                container_name,
-                int(year),
-                int(month),
-                lookback_hours=12,
-            )
             st.session_state["df_results"] = merge_hourly_data(
                 st.session_state.get("df_results", pd.DataFrame()),
                 recent_df,
-            )
-            st.session_state["df_processed"] = merge_daily_data(
-                st.session_state.get("df_processed", pd.DataFrame()),
-                recent_processed,
             )
         st.session_state["recent_data_bootstrap_key"] = recent_bootstrap_key
     except Exception as exc:
@@ -1461,7 +1132,6 @@ if st.session_state.get("onboarded_repair_key") != onboarded_repair_key:
                 int(year),
                 int(month),
                 st.session_state.get("df_results", pd.DataFrame()),
-                st.session_state.get("df_processed", pd.DataFrame()),
                 repaired_presence_df,
                 repaired_vehicle_hours_df,
             )
@@ -1479,17 +1149,12 @@ with top_left_col:
             with st.spinner("Refreshing recent hours..."):
                 try:
                     recent_df = fetch_recent_hours(sas_url, container_name, int(year), int(month), lookback_hours=24)
-                    recent_processed = fetch_recent_processed_days(
-                        sas_url, container_name, int(year), int(month), lookback_hours=24
-                    )
                     st.session_state["df_results"] = merge_hourly_data(st.session_state["df_results"], recent_df)
-                    st.session_state["df_processed"] = merge_daily_data(st.session_state["df_processed"], recent_processed)
                     save_cached_datasets(
                         container_name,
                         int(year),
                         int(month),
                         st.session_state["df_results"],
-                        st.session_state["df_processed"],
                     )
                     st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1514,18 +1179,9 @@ with top_left_col:
                         int(year),
                         int(month),
                         st.session_state["df_results"],
-                        st.session_state["df_processed"],
                         refreshed_presence_df,
                         refreshed_vehicle_hours_df,
                     )
-
-                    # Invalidate Tab 2 computed caches so next render reflects refreshed data.
-                    processed_heatmap_cache_key = f"processed_heatmap_{int(year)}_{int(month):02d}"
-                    st.session_state.pop(processed_heatmap_cache_key, None)
-                    unprocessed_prefix = f"unprocessed_{int(year)}_{int(month):02d}_"
-                    for _cache_key in list(st.session_state.keys()):
-                        if _cache_key.startswith(unprocessed_prefix):
-                            st.session_state.pop(_cache_key, None)
                 except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
                     st.error(f"Unable to refresh recent hours: {exc}")
                     st.session_state["onboarded_error"] = str(exc)
@@ -1699,7 +1355,6 @@ if st.session_state["active_tab"] == 1:
                     int(year),
                     int(month),
                     st.session_state.get("df_results", pd.DataFrame()),
-                    st.session_state.get("df_processed", pd.DataFrame()),
                     st.session_state["onboarded_presence_df"],
                     st.session_state["onboarded_vehicle_hours_df"],
                 )
