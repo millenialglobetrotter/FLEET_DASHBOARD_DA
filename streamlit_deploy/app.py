@@ -901,63 +901,9 @@ def refresh_onboarded_cache_for_month(
     return presence_df, vehicle_hours_df
 
 
-with st.sidebar:
-    st.header("Settings")
-
-    default_sas = secret_or_default("SAS_URL", "")
-    default_container = secret_or_default("CONTAINER_NAME", "")
-    default_year = int(secret_or_default("DEFAULT_YEAR", datetime.now().year))
-    default_month = int(secret_or_default("DEFAULT_MONTH", datetime.now().month))
-
-    if "sas_url_input" not in st.session_state:
-        st.session_state["sas_url_input"] = default_sas
-    if "container_name_input" not in st.session_state:
-        st.session_state["container_name_input"] = default_container
-    if "year_input" not in st.session_state:
-        st.session_state["year_input"] = default_year
-    if "month_input" not in st.session_state:
-        st.session_state["month_input"] = default_month
-
-    sas_url = st.text_input("SAS URL", key="sas_url_input", help="Container SAS URL")
-    container_name = st.text_input("Container Name", key="container_name_input")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        year = st.number_input("Year", key="year_input", min_value=2020, max_value=2035)
-    with c2:
-        month = st.number_input("Month", key="month_input", min_value=1, max_value=12)
-
-    st.divider()
-    st.caption("Shared cache is reused across users. Refresh updates recent data and saves for everyone.")
-    gist_id_dbg, gist_token_dbg = _gist_credentials()
-    if gist_id_dbg and gist_token_dbg:
-        st.caption("Gist cache: configured")
-    else:
-        st.caption("Gist cache: missing GITHUB_GIST_ID/GITHUB_GIST_TOKEN")
-    if st.session_state.get("gist_cache_error"):
-        st.caption(f"Gist cache error: {st.session_state['gist_cache_error']}")
-    presence_dbg = st.session_state.get("onboarded_presence_df", pd.DataFrame())
-    if not presence_dbg.empty and "day" in presence_dbg.columns:
-        st.caption(f"Onboarded presence cached through day: {int(presence_dbg['day'].max())}")
-    if not default_sas or not default_container:
-        st.warning("⚠️ SAS_URL and/or CONTAINER_NAME not configured in secrets. Please enter them above.")
-        st.caption("Tip: Set SAS_URL and CONTAINER_NAME in Streamlit secrets for permanent prefill.")
-        
-        # Show available secrets for debugging
-        available_keys = get_secret_keys()
-        if available_keys:
-            with st.expander("ℹ️ Available secrets (debug info)"):
-                st.write("Keys found in secrets:")
-                for key in available_keys:
-                    st.text(f"  • {key}")
-        else:
-            st.caption("ℹ️ No secrets configured. Create a .streamlit/secrets.toml file with SAS_URL and CONTAINER_NAME.")
-    else:
-        st.success("✓ Credentials loaded from secrets")
-
-
 @st.cache_data(show_spinner=False)
 def count_vehicles_per_hour_for_month(sas_url: str, container_name: str, year: int, month: int) -> pd.DataFrame:
+    """Scan all blobs in raw-data/{year}/{month}/{day}/{hour}/ and count unique vehicles per hour."""
     rows = []
 
     if not sas_url or not container_name:
@@ -996,6 +942,117 @@ def count_vehicles_per_hour_for_month(sas_url: str, container_name: str, year: i
 
     progress.empty()
     return pd.DataFrame(rows)
+
+
+with st.sidebar:
+    st.header("Settings")
+
+    default_sas = secret_or_default("SAS_URL", "")
+    default_container = secret_or_default("CONTAINER_NAME", "")
+    default_year = int(secret_or_default("DEFAULT_YEAR", datetime.now().year))
+    default_month = int(secret_or_default("DEFAULT_MONTH", datetime.now().month))
+
+    if "sas_url_input" not in st.session_state:
+        st.session_state["sas_url_input"] = default_sas
+    if "container_name_input" not in st.session_state:
+        st.session_state["container_name_input"] = default_container
+    if "year_input" not in st.session_state:
+        st.session_state["year_input"] = default_year
+    if "month_input" not in st.session_state:
+        st.session_state["month_input"] = default_month
+
+    sas_url = st.text_input("SAS URL", key="sas_url_input", help="Container SAS URL")
+    container_name = st.text_input("Container Name", key="container_name_input")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        year = st.number_input("Year", key="year_input", min_value=2020, max_value=2035)
+    with c2:
+        month = st.number_input("Month", key="month_input", min_value=1, max_value=12)
+
+    st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
+    
+    if st.button("🔄 Rebuild Cache for Month", use_container_width=True, help="Force rebuild cache for entire month from Azure. May take 1-2 minutes."):
+        with st.popover("Confirm Full Month Rebuild", use_container_width=True):
+            st.warning(f"This will scan all days in {int(month)}/{int(year)} from Azure, which may take 1-2 minutes. Continue?")
+            col_yes, col_no = st.columns(2)
+            with col_yes:
+                if st.button("✓ Rebuild", use_container_width=True, type="primary"):
+                    with st.spinner("Rebuilding cache for entire month... This may take a minute or two."):
+                        try:
+                            # Clear cache for count_vehicles_per_hour_for_month
+                            st.cache_data.clear()
+                            
+                            # Fetch full month raw data
+                            raw_df = count_vehicles_per_hour_for_month(
+                                sas_url,
+                                container_name,
+                                int(year),
+                                int(month),
+                            )
+                            st.session_state["df_results"] = raw_df
+                            
+                            # Fetch full onboarded data for month
+                            refreshed_presence_df, refreshed_vehicle_hours_df = refresh_onboarded_cache_for_month(
+                                sas_url,
+                                container_name,
+                                int(year),
+                                int(month),
+                                force_full=True,
+                            )
+                            
+                            # Save rebuilt cache
+                            save_cached_datasets(
+                                container_name,
+                                int(year),
+                                int(month),
+                                raw_df,
+                                refreshed_presence_df,
+                                refreshed_vehicle_hours_df,
+                            )
+                            
+                            # Update timestamps
+                            st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            st.session_state.pop("onboarded_error", None)
+                            st.session_state.pop("gist_cache_error", None)
+                            
+                            st.success(f"✓ Cache rebuilt successfully for {int(month):02d}/{int(year)}")
+                            st.rerun()
+                        except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+                            st.error(f"Failed to rebuild cache: {exc}")
+            with col_no:
+                st.button("✗ Cancel", use_container_width=True)
+
+    st.divider()
+    st.caption("Shared cache is reused across users. Refresh updates recent data and saves for everyone.")
+    gist_id_dbg, gist_token_dbg = _gist_credentials()
+    if gist_id_dbg and gist_token_dbg:
+        st.caption("Gist cache: configured")
+    else:
+        st.caption("Gist cache: missing GITHUB_GIST_ID/GITHUB_GIST_TOKEN")
+    if st.session_state.get("gist_cache_error"):
+        st.caption(f"Gist cache error: {st.session_state['gist_cache_error']}")
+    presence_dbg = st.session_state.get("onboarded_presence_df", pd.DataFrame())
+    if not presence_dbg.empty and "day" in presence_dbg.columns:
+        st.caption(f"Onboarded presence cached through day: {int(presence_dbg['day'].max())}")
+    if not default_sas or not default_container:
+        st.warning("⚠️ SAS_URL and/or CONTAINER_NAME not configured in secrets. Please enter them above.")
+        st.caption("Tip: Set SAS_URL and CONTAINER_NAME in Streamlit secrets for permanent prefill.")
+        
+        # Show available secrets for debugging
+        available_keys = get_secret_keys()
+        if available_keys:
+            with st.expander("ℹ️ Available secrets (debug info)"):
+                st.write("Keys found in secrets:")
+                for key in available_keys:
+                    st.text(f"  • {key}")
+        else:
+            st.caption("ℹ️ No secrets configured. Create a .streamlit/secrets.toml file with SAS_URL and CONTAINER_NAME.")
+    else:
+        st.success("✓ Credentials loaded from secrets")
+
 
 
 def count_vehicles_for_hour(container_client: ContainerClient, year: int, month: int, day: int, hour: int) -> dict:
