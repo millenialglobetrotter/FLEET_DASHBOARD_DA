@@ -88,17 +88,17 @@ st.markdown(
     .brand-header {
         display: flex;
         flex-direction: column;
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
+        position: static;
+        top: auto;
+        left: auto;
+        right: auto;
         width: 100%;
-        z-index: 90;
+        z-index: auto;
         background: #ffffff;
         padding: 0.2rem 1rem 0.3rem 1rem;
         box-sizing: border-box;
         border-bottom: 1px solid var(--bosch-gray-85);
-        pointer-events: none;
+        pointer-events: auto;
     }
     .brand-header * {
         pointer-events: auto;
@@ -127,10 +127,10 @@ st.markdown(
         padding: 0;
     }
     .brand-header-spacer {
-        height: 130px;
+        height: 0px;
     }
     [data-testid="stSidebar"] > div:first-child {
-        padding-top: 130px;
+        padding-top: 0px;
     }
     @media (max-width: 992px) {
         .block-container {
@@ -150,10 +150,10 @@ st.markdown(
             font-size: 0.88rem;
         }
         .brand-header-spacer {
-            height: 110px;
+            height: 0px;
         }
         [data-testid="stSidebar"] > div:first-child {
-            padding-top: 110px;
+            padding-top: 0px;
         }
     }
     @media (max-width: 640px) {
@@ -179,10 +179,10 @@ st.markdown(
             margin-top: 0.1rem;
         }
         .brand-header-spacer {
-            height: 90px;
+            height: 0px;
         }
         [data-testid="stSidebar"] > div:first-child {
-            padding-top: 90px;
+            padding-top: 0px;
         }
         .ux-subtle-box {
             margin-bottom: 0.45rem;
