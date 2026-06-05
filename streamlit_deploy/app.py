@@ -501,7 +501,7 @@ def save_cached_datasets(
     raw_df: pd.DataFrame,
     presence_df: pd.DataFrame | None = None,
     vehicle_hours_df: pd.DataFrame | None = None,
-):
+) -> bool:
     key = _safe_cache_key(container_name, year, month)
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     presence_df = presence_df if presence_df is not None else pd.DataFrame()
@@ -509,7 +509,8 @@ def save_cached_datasets(
 
     gist_id, gist_token = _gist_credentials()
     if not gist_id or not gist_token:
-        return
+        st.session_state["gist_cache_error"] = "Gist cache unavailable: missing GITHUB_GIST_ID/GITHUB_GIST_TOKEN"
+        return False
 
     files = {
         f"raw_{key}.csv": raw_df.to_csv(index=False),
@@ -519,7 +520,7 @@ def save_cached_datasets(
         files[f"presence_{key}.csv"] = presence_df.to_csv(index=False)
     if not vehicle_hours_df.empty:
         files[f"vehicle_hours_{key}.csv"] = vehicle_hours_df.to_csv(index=False)
-    _gist_save_files(gist_id, gist_token, files)
+    return _gist_save_files(gist_id, gist_token, files)
 
 
 def is_cache_stale(cached_at: str, max_age_minutes: int = 15) -> bool:
@@ -999,7 +1000,7 @@ with st.sidebar:
                             int(month),
                             force_full=True,
                         )
-                        save_cached_datasets(
+                        save_ok = save_cached_datasets(
                             container_name,
                             int(year),
                             int(month),
@@ -1011,8 +1012,14 @@ with st.sidebar:
                         st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         st.session_state.pop("onboarded_error", None)
-                        st.session_state.pop("gist_cache_error", None)
-                        st.success(f"✓ Cache rebuilt for {int(month):02d}/{int(year)}")
+                        if save_ok:
+                            st.session_state.pop("gist_cache_error", None)
+                            st.success(f"✓ Cache rebuilt and saved for {int(month):02d}/{int(year)}")
+                        else:
+                            st.warning(
+                                "Month rebuild completed, but shared cache save failed. "
+                                "Check Gist credentials/error in sidebar."
+                            )
                         st.rerun()
                     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
                         st.error(f"Rebuild failed: {exc}")
