@@ -331,10 +331,6 @@ st.markdown(
     [data-testid="stTabs"] button {
         border-radius: 0 !important;
     }
-    .stAppHeader,
-    header[data-testid="stHeader"] {
-        display: none !important;
-    }
     footer {visibility: hidden;}
     .metric-info-icon {
         display: inline-block;
