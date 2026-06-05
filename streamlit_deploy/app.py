@@ -972,20 +972,19 @@ with st.sidebar:
         month = st.number_input("Month", key="month_input", min_value=1, max_value=12)
 
     st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
-    
-    rebuild_clicked = st.button("🔄 Rebuild Cache for Month", use_container_width=True, help="Force rebuild cache for entire month from Azure. May take 1-2 minutes.")
-    
-    if rebuild_clicked:
-        st.warning("⚠️ This will scan all days in Azure (may take 1-2 minutes).")
+
+    if st.button("🔄 Rebuild Cache for Month", use_container_width=True, help="Force rebuild cache for entire month from Azure. May take 1-2 minutes."):
+        st.session_state["rebuild_confirm_pending"] = True
+
+    if st.session_state.get("rebuild_confirm_pending"):
+        st.warning(f"⚠️ This will scan all days in {int(month):02d}/{int(year)} from Azure. May take 1-2 minutes.")
         col_yes, col_no = st.columns(2)
         with col_yes:
-            if st.button("✓ Rebuild", use_container_width=True, type="primary", key="rebuild_confirm"):
-                with st.spinner("Rebuilding cache for entire month... This may take a minute or two."):
+            if st.button("✓ Confirm", use_container_width=True, type="primary", key="rebuild_do"):
+                st.session_state["rebuild_confirm_pending"] = False
+                with st.spinner("Rebuilding cache for entire month..."):
                     try:
-                        # Clear cache for count_vehicles_per_hour_for_month
                         st.cache_data.clear()
-                        
-                        # Fetch full month raw data
                         raw_df = count_vehicles_per_hour_for_month(
                             sas_url,
                             container_name,
@@ -993,8 +992,6 @@ with st.sidebar:
                             int(month),
                         )
                         st.session_state["df_results"] = raw_df
-                        
-                        # Fetch full onboarded data for month
                         refreshed_presence_df, refreshed_vehicle_hours_df = refresh_onboarded_cache_for_month(
                             sas_url,
                             container_name,
@@ -1002,8 +999,6 @@ with st.sidebar:
                             int(month),
                             force_full=True,
                         )
-                        
-                        # Save rebuilt cache
                         save_cached_datasets(
                             container_name,
                             int(year),
@@ -1012,20 +1007,19 @@ with st.sidebar:
                             refreshed_presence_df,
                             refreshed_vehicle_hours_df,
                         )
-                        
-                        # Update timestamps
                         st.session_state["cache_loaded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         st.session_state["last_refresh"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         st.session_state["onboarded_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         st.session_state.pop("onboarded_error", None)
                         st.session_state.pop("gist_cache_error", None)
-                        
-                        st.success(f"✓ Cache rebuilt successfully for {int(month):02d}/{int(year)}")
+                        st.success(f"✓ Cache rebuilt for {int(month):02d}/{int(year)}")
                         st.rerun()
                     except (ValueError, RuntimeError, urlerror.URLError, urlerror.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-                        st.error(f"Failed to rebuild cache: {exc}")
+                        st.error(f"Rebuild failed: {exc}")
         with col_no:
-            st.button("✗ Cancel", use_container_width=True, key="rebuild_cancel")
+            if st.button("✗ Cancel", use_container_width=True, key="rebuild_cancel"):
+                st.session_state["rebuild_confirm_pending"] = False
+                st.rerun()
 
     st.divider()
     st.caption("Shared cache is reused across users. Refresh updates recent data and saves for everyone.")
