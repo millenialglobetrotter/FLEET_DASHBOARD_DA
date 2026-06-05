@@ -93,11 +93,16 @@ st.markdown(
         left: 0;
         right: 0;
         width: 100%;
-        z-index: 1000000;
+        z-index: 90;
         background: #ffffff;
         padding: 0.2rem 1rem 0.3rem 1rem;
         box-sizing: border-box;
         border-bottom: 1px solid var(--bosch-gray-85);
+        pointer-events: none;
+    }
+    .brand-header * {
+        pointer-events: auto;
+    }
     }
     .brand-supergraphic {
         width: 100vw;
